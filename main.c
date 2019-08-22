@@ -101,6 +101,12 @@ typedef struct SyntaxNodeStruct {
     struct SyntaxNodeStruct* nodes;
 } SyntaxNode;
 
+typedef struct NodeListStruct {
+    int size;
+    int capacity;
+    SyntaxNode** array;
+} NodeList;
+
 #pragma endregion
 #pragma region FunctionDefs
 void lex(FILE* file);
@@ -110,6 +116,9 @@ char* readIdentifier(FILE* file, char startingChar);
 char* readNumber(FILE* file, char startingChar);
 char* readString(FILE* file, char openingQuote);
 void readComment(FILE* file);
+void resize(NodeList* list);
+void addNode(NodeList* list, SyntaxNode* node);
+SyntaxNode* getNode(NodeList* list, int i);
 #pragma endregion
 #pragma region Code
 
@@ -401,7 +410,7 @@ void readComment(FILE* file) {
 #pragma endregion
 
 #pragma region Parser
-// https://github.com/antlr/grammars-v4/blob/master/pascal/pascal.g4
+// https://github.com/antlr/grammars-v4/blob/master/pascal/pascal.g4`
 
 SyntaxNode* parse() {
     bufferIndex = 0;
@@ -410,18 +419,16 @@ SyntaxNode* parse() {
 
 SyntaxNode* parseProgram() {
     SyntaxNode* root = (SyntaxNode*)malloc(sizeof(SyntaxNode*));
-    SyntaxNode* nodes[100];
+    NodeList* nodes = createNodeList();
 
-    SyntaxNode* heading = parseProgramHeading();
-    nodes[0] = heading;
+    addNode(nodes, parseProgramHeading());
 
     if (tokenBuffer[bufferIndex] -> type == INTERFACE) {
         bufferIndex++;
     }
 
-    int i = 1;
-    while (tokenBuffer[bufferIndex] -> type != DOT) {
-        nodes[i++] = parseBlock();
+    while (tokenBuffer[bufferIndex++] -> type != DOT) {
+        addNode(nodes, parseBlock());
     }
     root -> nodes = nodes;
 }
@@ -440,6 +447,44 @@ SyntaxNode* parseProgramHeading() {
 
 SyntaxNode* parseBlock() {
     
+}
+
+#pragma endregion
+
+#pragma region List
+
+// TODO: Implement List
+
+NodeList* createNodeList() {
+    NodeList* list = (NodeList*)malloc(sizeof(NodeList));
+    list -> size = 0;
+    list -> capacity = 0;
+    list -> array = (SyntaxNode**)malloc(0);
+}
+
+void addNode(NodeList* list, SyntaxNode* node) {
+    if (list -> size + 1 >= list -> capacity) {
+        resize(list);
+    }
+    list -> array[list -> size] = node;
+    list -> size++;
+}
+
+void resize(NodeList* list) {
+    if (list -> size == 0) {
+        list -> capacity = 4;
+    } else {
+        list -> capacity *= 2;
+    }
+    SyntaxNode** resizedList = (SyntaxNode**)malloc(sizeof(SyntaxNode) * list -> capacity);
+    for (int i = 0; i < list -> size; i++) {
+        resizedList[i] = list -> array[i];
+    }
+    list -> array = resizedList;
+}
+
+SyntaxNode* getNode(NodeList* list, int i) {
+    return list -> array[i];
 }
 
 #pragma endregion
