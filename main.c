@@ -74,6 +74,7 @@ enum TokenType {
     GREATER_THAN_OR_EQUAL,
     INTEGER,
     REAL,
+    UNIT,
     CHARACTER,
     BOOLEAN,
     WHITESPACE,
@@ -83,7 +84,11 @@ enum TokenType {
 };
 
 enum SyntaxNodeType {
-    ADD
+    IDENTIFIER_NODE,
+    PROGRAM_NODE,
+    UNIT_NODE,
+    PROGRAM_HEADING_NODE,
+    IDENTIFIER_LIST_NODE,
 };
 
 #pragma endregion
@@ -94,21 +99,25 @@ typedef struct TokenStruct {
     enum TokenType type;
 } Token;
 
+typedef struct NodeListStruct {
+    int size;
+    int capacity;
+    struct SyntaxNodeStruct** array;
+} NodeList;
+
 typedef struct SyntaxNodeStruct {
     int value;
     char* data;
     enum SyntaxNodeType type;
-    struct SyntaxNodeStruct* nodes;
+    struct NodeListStruct* nodes;
 } SyntaxNode;
 
-typedef struct NodeListStruct {
-    int size;
-    int capacity;
-    SyntaxNode** array;
-} NodeList;
+
 
 #pragma endregion
 #pragma region FunctionDefs
+
+// Lex
 void lex(FILE* file);
 Token* createToken(char* data, enum TokenType type);
 void printToken(Token* token);
@@ -116,9 +125,22 @@ char* readIdentifier(FILE* file, char startingChar);
 char* readNumber(FILE* file, char startingChar);
 char* readString(FILE* file, char openingQuote);
 void readComment(FILE* file);
+
+// Parse
+SyntaxNode* parse();
+SyntaxNode* parseProgram();
+SyntaxNode* parseProgramHeading();
+SyntaxNode* parseBlock();
+SyntaxNode* readIdentifierList();
+Token* readNext(enum TokenType type);
+int isNext(enum TokenType type);
+
+// NodeList
 void resize(NodeList* list);
+NodeList* createNodeList();
 void addNode(NodeList* list, SyntaxNode* node);
 SyntaxNode* getNode(NodeList* list, int i);
+
 #pragma endregion
 #pragma region Code
 
@@ -136,9 +158,7 @@ int main(int argc, char *argv[]) {
     }
     FILE* input = fopen(argv[1], "r");
     lex(input);
-    for (int i = 0; i < bufferIndex; i++) {
-        printToken(tokenBuffer[i]);
-    }
+    SyntaxNode* root = parse();
     return 0;
 }
 
@@ -262,6 +282,8 @@ void lex(FILE* file) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, TO);
             } else if (strcasecmp(identifier, "type") == 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, TYPE);
+            } else if (strcasecmp(identifier, "unit") == 0) {
+                tokenBuffer[bufferIndex++] = createToken(identifier, UNIT);
             } else if (strcasecmp(identifier, "until") == 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, UNTIL);
             } else if (strcasecmp(identifier, "var") == 0) {
@@ -295,10 +317,10 @@ void lex(FILE* file) {
                 tokenBuffer[bufferIndex++] = createToken("]", RIGHT_BRACKET);
                 break;
             case '(':
-                tokenBuffer[bufferIndex++] = createToken("(", RIGHT_PARENTHESES);
+                tokenBuffer[bufferIndex++] = createToken("(", LEFT_PARENTHESES);
                 break;
             case ')':
-                tokenBuffer[bufferIndex++] = createToken(")", LEFT_PARENTHESES);
+                tokenBuffer[bufferIndex++] = createToken(")", RIGHT_PARENTHESES);
                 break;
             case '.':
                 tokenBuffer[bufferIndex++] = createToken(".", DOT);
@@ -412,13 +434,18 @@ void readComment(FILE* file) {
 #pragma region Parser
 // https://github.com/antlr/grammars-v4/blob/master/pascal/pascal.g4`
 
+SyntaxNode* createNode() {
+    return (SyntaxNode*)malloc(sizeof(SyntaxNode));
+}
+
 SyntaxNode* parse() {
     bufferIndex = 0;
-    return NULL;
+    return parseProgram();
 }
 
 SyntaxNode* parseProgram() {
     SyntaxNode* root = (SyntaxNode*)malloc(sizeof(SyntaxNode*));
+    root -> type = PROGRAM_NODE;
     NodeList* nodes = createNodeList();
 
     addNode(nodes, parseProgramHeading());
@@ -431,35 +458,88 @@ SyntaxNode* parseProgram() {
         addNode(nodes, parseBlock());
     }
     root -> nodes = nodes;
+    return root;
 }
 
 SyntaxNode* parseProgramHeading() {
-    // TODO: UNIT
+    SyntaxNode* node = createNode();
+    NodeList* list = createNodeList();
+    Token* name;
+    if (isNext(UNIT)) {
+        readNext(UNIT);
+        node -> type = UNIT_NODE;
+        name = readNext(IDENTIFIER);
+        node -> data = name -> value;
+    } else {
+        readNext(PROGRAM);
+        node -> type = PROGRAM_HEADING_NODE;
+        name = readNext(IDENTIFIER);
+        if (isNext(LEFT_PARENTHESES) == 1) {
+            readNext(LEFT_PARENTHESES);
+            SyntaxNode* idList = readIdentifierList();
+            for (int i = 0; i < idList -> nodes -> size; i++) {
+                addNode(list, getNode(idList -> nodes, i));
+            }
+            free(idList -> nodes);
+            free(idList);
+            readNext(RIGHT_PARENTHESES);
+        }
+    }
+    node -> nodes = list;
+    node -> data = name -> value;
+    readNext(SEMICOLON);
+    return node;
+}
 
-    readNext(PROGRAM);
-    // read name
-    // if paren exists
-        // read next l paren
-        // read identifier list
-        // read next r paren
-    // read semi colon
+SyntaxNode* readIdentifierList() {
+    SyntaxNode* node = createNode();
+    NodeList* list = createNodeList();
+    node -> type = IDENTIFIER_LIST_NODE;
+    list -> size = 0;
+
+    SyntaxNode* identifierNode = createNode();
+    Token* identifier = readNext(IDENTIFIER);
+    identifierNode -> type = IDENTIFIER_NODE;
+    identifierNode -> data = identifier -> value;
+    addNode(list, identifierNode);
+    while (isNext(COMMA) == 1) {
+        readNext(COMMA);
+        SyntaxNode* identifierNode = createNode();
+        Token* identifier = readNext(IDENTIFIER);
+        identifierNode -> type = IDENTIFIER_NODE;
+        identifierNode -> data = identifier -> value;
+        addNode(list, identifierNode);
+    }
+    node -> nodes = list;
+    return node;
 }
 
 SyntaxNode* parseBlock() {
-    
+    return NULL;
+}
+
+Token* readNext(enum TokenType type) {
+    if (tokenBuffer[bufferIndex] -> type != type) {
+        printf("Expected next token to be type %d", type);
+        exit(1);
+    }
+    return tokenBuffer[bufferIndex++];
+}
+
+int isNext(enum TokenType type) {
+    return tokenBuffer[bufferIndex] -> type == type;
 }
 
 #pragma endregion
 
 #pragma region List
 
-// TODO: Implement List
-
 NodeList* createNodeList() {
     NodeList* list = (NodeList*)malloc(sizeof(NodeList));
     list -> size = 0;
     list -> capacity = 0;
     list -> array = (SyntaxNode**)malloc(0);
+    return list;
 }
 
 void addNode(NodeList* list, SyntaxNode* node) {
@@ -480,6 +560,7 @@ void resize(NodeList* list) {
     for (int i = 0; i < list -> size; i++) {
         resizedList[i] = list -> array[i];
     }
+    free(list -> array);
     list -> array = resizedList;
 }
 
