@@ -7,6 +7,7 @@
 
 enum TokenType {
     AND,
+    AT,
     ARRAY,
     BEGIN,
     CASE,
@@ -139,6 +140,46 @@ enum SyntaxNodeType {
     FUNCTION_DECLARATION_NODE,
     USES_UNITS_NODE,
     COMPOUND_STATEMENT_NODE,
+    STATEMENTS_NODE,
+    STATEMENT_NODE,
+    UNLABELLED_STATEMENT_NODE,
+    SIMPLE_STATEMENT_NODE,
+    ASSIGNMENT_STATEMENT_NODE,
+    VARIABLE_NODE,
+    EXPRESSION_NODE,
+    RELATIONAL_OPERATOR_NODE,
+    SIMPLE_EXPRESSION_NODE,
+    ADDITIVE_OPERATOR_NODE,
+    TERM_NODE,
+    MULTIPLICATIVE_OPERATOR_NODE,
+    SIGNED_FACTOR_NODE,
+    FACTOR_NODE,
+    UNSIGNED_CONSTANT_NODE,
+    FUNCTION_DESIGNATOR_NODE,
+    PARAMETER_LIST_NODE,
+    SET_NODE,
+    ELEMENT_LIST_NODE,
+    ELEMENT_NODE,
+    PROCEDURE_STATEMENT_NODE,
+    ACTUAL_PARAMETER_NODE,
+    PARAMETER_WIDTH_NODE,
+    GOTO_STATEMENT_NODE,
+    EMPTY_STATEMENT_NODE,
+    EMPTY_NODE,
+    STRUCTURED_STATEMENT_NODE,
+    CONDITIONAL_STATEMENT_NODE,
+    IF_STATEMENT_NODE,
+    CASE_STATEMENT_NODE,
+    CASE_LIST_ELEMENT_NODE,
+    REPETATIVE_STATEMENT_NODE,
+    WHILE_STATEMENT_NODE,
+    REPEAT_STATEMENT_NODE,
+    FOR_STATEMENT_NODE,
+    FOR_LIST_NODE,
+    INITIAL_VALUE_NODE,
+    FINAL_VALUE_NODE,
+    WITH_STATEMENT_NODE,
+    RECORD_VARIABLE_LIST_NODE
 };
 
 #pragma endregion
@@ -166,7 +207,6 @@ typedef struct SyntaxNodeStruct {
 #pragma endregion
 #pragma region FunctionDefs
 
-// Lex
 void lex(FILE* file);
 Token* createToken(char* data, enum TokenType type);
 void printToken(Token* token);
@@ -229,8 +269,23 @@ SyntaxNode* parseParameterGroup();
 SyntaxNode* parseFunctionDeclarationList();
 SyntaxNode* parseUsesUnits();
 SyntaxNode* parseCompoundStatement();
+SyntaxNode* parseStatements();
+SyntaxNode* parseStatement();
+SyntaxNode* parseUnlabelledStatement();
+int isAssignmentNext();
+SyntaxNode* parseAssignmentStatement();
+SyntaxNode* parseExpression();
+SyntaxNode* parseExpression();
+int isProcedureNext();
+SyntaxNode* parseProcedureStatement();
+SyntaxNode* parseParameterList();
+SyntaxNode* parseActualParameter();
+SyntaxNode* parseParameterWidth();
+SyntaxNode* parseGotoStatement();
+SyntaxNode* parseEmptyStatement();
 Token* readNext(enum TokenType type);
 int isNext(enum TokenType type);
+int isNthTypeNext(enum TokenType type, int n);
 
 // NodeList
 void resize(NodeList* list);
@@ -252,6 +307,9 @@ int main(int argc, char *argv[]) {
     {
         printf("Must pass a file to be compiled\n");
         exit(EXIT_FAILURE);
+    }
+    for (int i = 0; i < BUFFER_SIZE; i++) {
+        tokenBuffer[i] = NULL;
     }
     FILE* input = fopen(argv[1], "r");
     lex(input);
@@ -427,6 +485,8 @@ char* getTokenType(enum TokenType type) {
         return "String Token";
     case POINTER:
         return "Pointer Token";
+    case AT:
+        return "At Token";
     default:
         return "Undefined Token";
     }
@@ -470,10 +530,10 @@ void lex(FILE* file) {
         if (ch == '/') {
             if (fgetc(file) == '/') {
                 readComment(file);
-                ch = fgetc(file);
             } else {
                 fseek(file, -1, SEEK_CUR);
                 tokenBuffer[bufferIndex++] = createToken("/", DIVISION);
+                ch = fgetc(file);
             }
         }
         if (ch >= '0' && ch <= '9') {
@@ -623,6 +683,12 @@ void lex(FILE* file) {
             case ';':
                 tokenBuffer[bufferIndex++] = createToken(";", SEMICOLON);
                 break;
+            case '=':
+                tokenBuffer[bufferIndex++] = createToken("=", EQUAL);
+                break;
+            case '@':
+                tokenBuffer[bufferIndex++] = createToken("@", AT);
+                break;
             case ' ':
             case '\t':
             case '\n':
@@ -667,7 +733,7 @@ char* readNumber(FILE* file, char startingChar) {
         ch = fgetc(file);
     }
     fseek(file, -size, SEEK_CUR);
-    if (wasDot == 1) {
+    if (wasDot) {
         fseek(file, -1, SEEK_CUR);
     }
 
@@ -837,6 +903,86 @@ char* getNodeType(SyntaxNode* node) {
             return "Function Parameter Group Node";
         case PROCEDURE_PARAMETER_GROUP_NODE:
             return "Procedure Parameter Group Node";
+        case STATEMENTS_NODE:
+            return "Statements Node";
+        case STATEMENT_NODE:
+            return "Statement Node";
+        case UNLABELLED_STATEMENT_NODE:
+            return "Unlabelled Statement Node";
+        case SIMPLE_STATEMENT_NODE:
+            return "Simple Statement Node";
+        case ASSIGNMENT_STATEMENT_NODE:
+            return "Assignement Statement Node";
+        case VARIABLE_NODE:
+            return "Variable Node";
+        case EXPRESSION_NODE:
+            return "Expression Node";
+        case RELATIONAL_OPERATOR_NODE:
+            return "Relational Operator Node";
+        case SIMPLE_EXPRESSION_NODE:
+            return "Simple Expression Node";
+        case ADDITIVE_OPERATOR_NODE:
+            return "Additive Operator Node";
+        case TERM_NODE:
+            return "Term Node";
+        case MULTIPLICATIVE_OPERATOR_NODE:
+            return "Multiplicative Operator Node";
+        case SIGNED_FACTOR_NODE:
+            return "Signed Factor Node";
+        case FACTOR_NODE:
+            return "Factor Node";
+        case UNSIGNED_CONSTANT_NODE:
+            return "Unsigned Constant Node";
+        case FUNCTION_DESIGNATOR_NODE:
+            return "Function Designator Node";
+        case PARAMETER_LIST_NODE:
+            return "Parameter List Node";
+        case SET_NODE:
+            return "Set Node";
+        case ELEMENT_LIST_NODE:
+            return "Element List Node";
+        case ELEMENT_NODE:
+            return "Element Node";
+        case PROCEDURE_STATEMENT_NODE:
+            return "Procedure Statement Node";
+        case ACTUAL_PARAMETER_NODE:
+            return "Actual Parameter Node";
+        case PARAMETER_WIDTH_NODE:
+            return "Parameter Width Node";
+        case GOTO_STATEMENT_NODE:
+            return "Goto Statement Node";
+        case EMPTY_STATEMENT_NODE:
+            return "Empty Statement Node";
+        case EMPTY_NODE:
+            return "Empty node";
+        case STRUCTURED_STATEMENT_NODE:
+            return "Structured Statement Node";
+        case CONDITIONAL_STATEMENT_NODE:
+            return "Conditional Statement Node";
+        case IF_STATEMENT_NODE:
+            return "If Statement Node";
+        case CASE_STATEMENT_NODE:
+            return "Case Statement Node";
+        case CASE_LIST_ELEMENT_NODE:
+            return "Case List Element Node";
+        case REPETATIVE_STATEMENT_NODE:
+            return "Repatative Statement Node";
+        case WHILE_STATEMENT_NODE:
+            return "While Statement Node";
+        case REPEAT_STATEMENT_NODE:
+            return "Repeat Statement Node";
+        case FOR_STATEMENT_NODE:
+            return "For Statement Node";
+        case FOR_LIST_NODE:
+            return "For List Node";
+        case INITIAL_VALUE_NODE:
+            return "Initial Value Node";
+        case FINAL_VALUE_NODE:
+            return "Final Value Node";
+        case WITH_STATEMENT_NODE:
+            return "With Statement Node";
+        case RECORD_VARIABLE_LIST_NODE:
+            return "Record Variable List Node";
         default:
             return "UNDEFINED NODE TYPE";
     }
@@ -898,7 +1044,7 @@ SyntaxNode* parseProgramHeading() {
         readNext(PROGRAM);
         node -> type = PROGRAM_HEADING_NODE;
         name = readNext(IDENTIFIER);
-        if (isNext(LEFT_PARENTHESES) == 1) {
+        if (isNext(LEFT_PARENTHESES) ) {
             readNext(LEFT_PARENTHESES);
             SyntaxNode* idList = parseIdentifierList();
             for (int i = 0; i < idList -> nodes -> size; i++) {
@@ -922,7 +1068,7 @@ SyntaxNode* parseIdentifierList() {
     list -> size = 0;
 
     addNode(list, parseIdentifier());
-    while (isNext(COMMA) == 1) {
+    while (isNext(COMMA) ) {
         readNext(COMMA);
         addNode(list, parseIdentifier());
     }
@@ -938,58 +1084,58 @@ SyntaxNode* parseIdentifier() {
     return node;
 }
 
+#pragma region BLOCK
+
 SyntaxNode* parseBlock() {
     SyntaxNode* blockNode = createNode();
     NodeList* list = createNodeList();
     blockNode -> type = BLOCK_NODE;
     blockNode -> nodes = list;
-    while (blockIsNext() == 1) {
-        if (isNext(LABEL) == 1) {
+    while (blockIsNext()) {
+        if (isNext(LABEL)) {
             addNode(list, parseLabelDeclarationList());
-        } else if (isNext(CONST) == 1) {
+        } else if (isNext(CONST)) {
             addNode(list, parseConstantDefinitionList());
-        } else if (isNext(TYPE) == 1) {
+        } else if (isNext(TYPE)) {
             addNode(list, parseTypeDefinitionList());
-        } else if (isNext(VAR) == 1) {
+        } else if (isNext(VAR)) {
             addNode(list, parseVariableDeclarationList());
-        } else if (isNext(PROCEDURE) == 1) {
+        } else if (isNext(PROCEDURE)) {
             addNode(list, parseProcedureDeclaration());
-        }  else if (isNext(FUNCTION) == 1) {
+        }  else if (isNext(FUNCTION)) {
             addNode(list, parseFunctionDeclarationList());
-        } else if (isNext(USES) == 1) {
+        } else if (isNext(USES)) {
             addNode(list, parseUsesUnits());
-        } else if (isNext(IMPLEMENTATION) == 1) {
+        } else if (isNext(IMPLEMENTATION)) {
             readNext(IMPLEMENTATION);
         }
     }
-    SyntaxNode* compoundStatement = parseCompoundStatement();
+    addNode(list, parseCompoundStatement());
     return blockNode;
 }
 
 int blockIsNext() {
-    return isNext(LABEL) == 1 ||
-            isNext(CONST) == 1 ||
-            isNext(LABEL) == 1 ||
-            isNext(TYPE) == 1 ||
-            isNext(VAR) == 1 ||
-            isNext(PROCEDURE) == 1 ||
-            isNext(FUNCTION) == 1 ||
-            isNext(USES) == 1 ||
-            isNext(IMPLEMENTATION) == 1;
+    return isNext(LABEL) ||
+            isNext(CONST) ||
+            isNext(LABEL) ||
+            isNext(TYPE) ||
+            isNext(VAR) ||
+            isNext(PROCEDURE) ||
+            isNext(FUNCTION) ||
+            isNext(USES) ||
+            isNext(IMPLEMENTATION);
 }
 
 SyntaxNode* parseLabelDeclarationList() {
     readNext(LABEL);
     SyntaxNode* node = createNode();
-    NodeList* list = createNodeList();
     node -> type = LABEL_DECLARATION_LIST_NODE;
-    node -> nodes = list;
-    SyntaxNode* usedIdentifierList = parseIdentifierList();
-    for (int i = 0; i < usedIdentifierList -> nodes -> size; i++) {
-        addNode(list, getNode(usedIdentifierList -> nodes, i));
+    node -> nodes = createNodeList();
+    addNode(node -> nodes, parseNumber());
+    while (isNext(COMMA)) {
+        readNext(COMMA);
+        addNode(node -> nodes, parseNumber());
     }
-    free(usedIdentifierList -> nodes);
-    free(usedIdentifierList);  
     readNext(SEMICOLON);
     return node;
 }
@@ -1018,7 +1164,7 @@ SyntaxNode* readConstantDefinition() {
     node -> type = CONSTANT_DEFINITION_NODE;
     node -> nodes = list;
     addNode(list, parseIdentifier());
-    readNext(ASSIGNMENT);
+    readNext(EQUAL);
     addNode(list, parseConstant());
     return node;
 }
@@ -1103,7 +1249,7 @@ SyntaxNode* parseTypeDefinitionList() {
 
     addNode(list, parseTypeDefinition());
     readNext(SEMICOLON);
-    while (isNext(IDENTIFIER) == 1) {
+    while (isNext(IDENTIFIER)) {
         addNode(list, parseTypeDefinition());
         readNext(SEMICOLON);
     }
@@ -1116,19 +1262,19 @@ SyntaxNode* parseTypeDefinition() {
     node -> nodes = list;
     node -> type = TYPE_DEFINITION_NODE;
     addNode(list, parseIdentifier());
-    readNext(ASSIGNMENT);
+    readNext(EQUAL);
     addNode(list, parseType());
     return node;
 }
 
 SyntaxNode* parseType() {
-    if (isNextSimpleType() == 1) {
+    if (isNextSimpleType()) {
         return parseSimpleType();
     }
-    if (isNextStructuredType() == 1) {
+    if (isNextStructuredType()) {
         return parseStructuredType();
     }
-    if (isNext(POINTER) == 1) {
+    if (isNext(POINTER)) {
         return parsePointerType();
     }
     printf("Failed to parse type.\n");
@@ -1136,14 +1282,14 @@ SyntaxNode* parseType() {
 }
 
 int isNextSimpleType() {
-    return isNext(LEFT_PARENTHESES) == 1 ||
-            isStringType() == 1 ||
-            isSubRangeType() == 1 ||
-            isTypeIdentifier() == 1;
+    return isNext(LEFT_PARENTHESES) ||
+            isStringType() ||
+            isSubRangeType() ||
+            isTypeIdentifier();
 }
 
 SyntaxNode* parseSimpleType() {
-    if (isNext(LEFT_PARENTHESES) == 1) {
+    if (isNext(LEFT_PARENTHESES)) {
         return parseScalar();
     }
     if (isStringType()) {
@@ -1160,7 +1306,7 @@ SyntaxNode* parseSimpleType() {
 }
 
 int isStringType() {
-    return isNext(STR) == 1 && tokenBuffer[bufferIndex + 1] -> type == LEFT_BRACKET;
+    return isNext(STR) && tokenBuffer[bufferIndex + 1] -> type == LEFT_BRACKET;
 }
 
 SyntaxNode* parseStringType() {
@@ -1178,12 +1324,12 @@ SyntaxNode* parseStringType() {
 }
 
 int isSubRangeType() {
-    return isNext(NUMBER) == 1 ||
-            isNext(ADDITION) == 1 ||
-            isNext(SUBTRACTION) == 1 ||
-            isNext(STRING) == 1 ||
-            isNext(CHR) == 1 ||
-            (isNext(IDENTIFIER) == 1 && tokenBuffer[bufferIndex + 1] -> type == DOT);
+    return isNext(NUMBER) ||
+            isNext(ADDITION) ||
+            isNext(SUBTRACTION) ||
+            isNext(STRING) ||
+            isNext(CHR) ||
+            (isNext(IDENTIFIER) && tokenBuffer[bufferIndex + 1] -> type == DOT);
 }
 
 SyntaxNode* parseSubrangeType() {
@@ -1199,12 +1345,12 @@ SyntaxNode* parseSubrangeType() {
 }
 
 int isTypeIdentifier() {
-    return isNext(CHAR) == 1 ||
-            isNext(BOOLEAN) == 1 ||
-            isNext(INTEGER) == 1 ||
-            isNext(REAL) == 1 ||
-            isNext(STR) == 1 || 
-            isNext(IDENTIFIER) == 1;
+    return isNext(CHAR) ||
+            isNext(BOOLEAN) ||
+            isNext(INTEGER) ||
+            isNext(REAL) ||
+            isNext(STR) || 
+            isNext(IDENTIFIER);
 }
 
 SyntaxNode* parseTypeIdentifier() {
@@ -1229,11 +1375,11 @@ SyntaxNode* parseScalar() {
 }
 
 int isNextStructuredType() {
-    return isNext(PACKED) == 1 ||
-            isNext(ARRAY) == 1 ||
-            isNext(RECORD) == 1 ||
-            isNext(SET) == 1 ||
-            isNext(PASCAL_FILE) == 1;
+    return isNext(PACKED) ||
+            isNext(ARRAY) ||
+            isNext(RECORD) ||
+            isNext(SET) ||
+            isNext(PASCAL_FILE);
 }
 
 SyntaxNode* parseStructuredType() {
@@ -1279,7 +1425,7 @@ SyntaxNode* parseTypeList() {
     node -> type = TYPE_LIST_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseSimpleType());
-    while (isNext(COMMA) == 1) {
+    while (isNext(COMMA)) {
         readNext(COMMA);
         addNode(node -> nodes, parseSimpleType());
     }
@@ -1316,7 +1462,7 @@ SyntaxNode* parseRecordType() {
     SyntaxNode* node = createNode();
     node -> type = RECORD_TYPE_NODE;
     readNext(RECORD);
-    if (isNext(IDENTIFIER) == 1 || isNext(CASE) == 1) {
+    if (isNext(IDENTIFIER) || isNext(CASE)) {
         node -> nodes = createNodeList();
         addNode(node -> nodes, parseFieldList());
     }
@@ -1345,7 +1491,7 @@ SyntaxNode* parseFixedPart() {
     node -> type = RECORD_SECTION_LIST_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseRecordSection());
-    while (isNext(SEMICOLON) == 1 && tokenBuffer[bufferIndex + 1] -> type != CASE) {
+    while (isNext(SEMICOLON) && tokenBuffer[bufferIndex + 1] -> type != CASE) {
         readNext(SEMICOLON);
         addNode(node -> nodes, parseRecordSection());
     }
@@ -1370,7 +1516,7 @@ SyntaxNode* parseVariantPart() {
     addNode(node -> nodes, parseTag());
     readNext(OF);
     addNode(node -> nodes, parseVariant());
-    while (isNext(SEMICOLON) == 1) {
+    while (isNext(SEMICOLON)) {
         readNext(SEMICOLON);
         addNode(node -> nodes, parseVariant());
     }
@@ -1408,7 +1554,7 @@ SyntaxNode* parseConstantList() {
     node -> nodes = createNodeList();
     node -> type = CONSTANT_LIST_NODE;
     addNode(node -> nodes, parseConstant());
-    while (isNext(COMMA) == 1) {
+    while (isNext(COMMA)) {
         readNext(COMMA);
         addNode(node -> nodes, parseConstant());
     }
@@ -1428,7 +1574,7 @@ SyntaxNode* parseVariableDeclarationList() {
     node -> type = VARIABLE_DECLARATION_LIST_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseVariableDeclaration());
-    while (isNext(SEMICOLON) == 1) {
+    while (isNext(SEMICOLON)) {
         readNext(SEMICOLON);
         if (isNext(IDENTIFIER)) {
             addNode(node -> nodes, parseVariableDeclaration());
@@ -1453,7 +1599,7 @@ SyntaxNode* parseProcedureDeclaration() {
     node -> type = PROCEDURE_DECLARATION_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseIdentifier());
-    if (isNext(LEFT_PARENTHESES) == 1) {
+    if (isNext(LEFT_PARENTHESES)) {
         addNode(node -> nodes, parseFormalParameterList());
     }
     readNext(SEMICOLON);
@@ -1467,7 +1613,7 @@ SyntaxNode* parseFormalParameterList() {
     node -> type = FORMAL_PARAMETER_LIST_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseFormalParameterSection());
-    while (isNext(SEMICOLON) == 1) {
+    while (isNext(SEMICOLON)) {
         readNext(SEMICOLON);
         addNode(node -> nodes, parseFormalParameterSection());
     }
@@ -1517,7 +1663,7 @@ SyntaxNode* parseFunctionDeclarationList() {
     node -> type = FUNCTION_DECLARATION_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseIdentifier());
-    if (isNext(LEFT_PARENTHESES) == 1) {
+    if (isNext(LEFT_PARENTHESES)) {
         addNode(node -> nodes, parseFormalParameterList());
     }
     readNext(COLON);
@@ -1543,8 +1689,147 @@ SyntaxNode* parseUsesUnits() {
     return node;
 }
 
+#pragma endregion
+
 SyntaxNode* parseCompoundStatement() {
+    readNext(BEGIN);
+    SyntaxNode* node = createNode();
+    node -> type = COMPOUND_STATEMENT_NODE;
+    node -> nodes = createNodeList();
+    addNode(node -> nodes, parseStatements());
+    readNext(END);
+    if (isNext(SEMICOLON)) {
+        readNext(SEMICOLON);
+    }
+    return node;
+}
+
+SyntaxNode* parseStatements() {
+    SyntaxNode* node = createNode();
+    node -> type = STATEMENTS_NODE;
+    node -> nodes = createNodeList();
+    addNode(node -> nodes, parseStatement());
+    while (isNext(SEMICOLON)) {
+        readNext(SEMICOLON);
+        SyntaxNode* statement = parseStatement();
+        if (statement -> type != EMPTY_STATEMENT_NODE) {
+            addNode(node -> nodes, statement);
+        }
+    }
+    return node;
+}
+
+SyntaxNode* parseStatement() {
+    SyntaxNode* node = createNode();
+    node -> type = STATEMENT_NODE;
+    node -> nodes = createNodeList();
+    if (isNext(NUMBER)) {
+        addNode(node -> nodes, parseNumber());
+        readNext(COLON);
+    }
+    SyntaxNode* statement = parseUnlabelledStatement();
+    if (statement -> type == EMPTY_STATEMENT_NODE) {
+        return statement;
+    }
+    addNode(node -> nodes, statement);
+    return node;
+}
+
+SyntaxNode* parseUnlabelledStatement() {
+    if (isAssignmentNext()) {
+        return NULL;
+    }
+    if (isProcedureNext()) {
+        return parseProcedureStatement();
+    }
+    if (isNext(GOTO)) {
+        return parseGotoStatement();
+    }
+    return parseEmptyStatement();
+}
+
+int isAssignmentNext() {
+    return isNext(AT) || 
+    (
+        (isNext(IDENTIFIER) && isNthTypeNext(LEFT_BRACKET, 1)) ||
+        (isNext(IDENTIFIER) && isNthTypeNext(DOT, 1)) ||
+        (isNext(IDENTIFIER) && isNthTypeNext(ASSIGNMENT, 1)) ||
+        (isNext(IDENTIFIER) && isNthTypeNext(POINTER, 1))
+    );
+}
+
+SyntaxNode* parseAssignmentStatement() {
     return NULL;
+}
+
+SyntaxNode* parseExpression() {
+    SyntaxNode* node = createNode();
+    node -> type = EXPRESSION_NODE;
+    node -> nodes = createNodeList();
+    addNode(node -> nodes, parseSimpleExpression());
+    return node;
+}
+
+int isProcedureNext() {
+    return (isNext(IDENTIFIER) && isNthTypeNext(LEFT_PARENTHESES, 1)) || 
+            isNext(IDENTIFIER);
+}
+
+SyntaxNode* parseProcedureStatement() {
+    SyntaxNode* node = createNode();
+    node -> type = PROCEDURE_STATEMENT_NODE;
+    node -> nodes = createNodeList();
+    addNode(node -> nodes, parseIdentifier());
+    if (isNext(LEFT_PARENTHESES)) {
+        readNext(LEFT_PARENTHESES);
+        addNode(node -> nodes, parseParameterList());
+        readNext(RIGHT_PARENTHESES);
+    }
+    return node;
+}
+
+SyntaxNode* parseParameterList() {
+    SyntaxNode* node = createNode();
+    node -> type = PARAMETER_LIST_NODE;
+    node -> nodes  = createNodeList();
+    addNode(node -> nodes, parseActualParameter());
+    while (isNext(COMMA)) {
+        readNext(COMMA);
+        addNode(node -> nodes, parseActualParameter());
+    }
+    return node;
+}
+
+SyntaxNode* parseActualParameter() {
+    SyntaxNode* node = createNode();
+    node -> nodes = createNodeList();
+    node -> type = ACTUAL_PARAMETER_NODE;
+    addNode(node -> nodes, parseExpression());
+    while (isNext(COLON)) {
+        addNode(node -> nodes, parseParameterWidth());
+    }
+    return node;
+}
+
+SyntaxNode* parseParameterWidth() {
+    readNext(COLON);
+    SyntaxNode* node = parseExpression();
+    node -> type = PARAMETER_WIDTH_NODE;
+    return node; 
+}
+
+SyntaxNode* parseGotoStatement() {
+    readNext(GOTO);
+    SyntaxNode* node = createNode();
+    node -> type = GOTO_STATEMENT_NODE;
+    node -> data = parseNumber() -> data;
+    return node;
+}
+
+SyntaxNode* parseEmptyStatement() {
+    SyntaxNode* node = createNode();
+    node -> type = EMPTY_STATEMENT_NODE;
+    return node;
 }
 
 Token* readNext(enum TokenType type) {
@@ -1557,6 +1842,12 @@ Token* readNext(enum TokenType type) {
 
 int isNext(enum TokenType type) {
     return tokenBuffer[bufferIndex] -> type == type;
+}
+
+int isNthTypeNext(enum TokenType type, int n) {
+    return BUFFER_SIZE > bufferIndex + n && 
+        tokenBuffer[bufferIndex + n] != NULL && 
+        tokenBuffer[bufferIndex + n] -> type == type;
 }
 
 #pragma endregion
