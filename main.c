@@ -623,9 +623,7 @@ void lex(FILE* file) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, BEGIN);
             } else if (strcasecmp(identifier, "boolean") == 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, BOOLEAN);
-            } else if (strcasecmp(identifier, "character") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, CHARACTER);
-            }  else if (strcasecmp(identifier, "char") == 0) {
+            } else if (strcasecmp(identifier, "char") == 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, CHAR);
             } else if (strcasecmp(identifier, "chr") == 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, CHR);
@@ -1900,8 +1898,7 @@ SyntaxNode* parseUnlabelledStatement() {
     if (isStructuredStatementNext()) {
         return parseStructuredStatement();
     }
-    printf("Failed to parse Unlabelled Statement");
-    exit(1);
+    return parseEmptyStatement();
 }
 
 int isSimpleStatementNext() {
