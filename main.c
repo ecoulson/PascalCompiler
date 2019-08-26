@@ -203,7 +203,9 @@ enum SyntaxNodeType {
     LESS_THAN_OR_EQUAL_NODE,
     GREATER_THAN_NODE,
     GREATER_THAN_OR_EQUAL_NODE,
-    IN_NODE
+    IN_NODE,
+    TO_NODE,
+    DOWN_TO_NODE,
 };
 
 #pragma endregion
@@ -341,13 +343,18 @@ int isConditionalStatementNext();
 SyntaxNode* parseConditionalStatement();
 SyntaxNode* parseIfStatement();
 SyntaxNode* parseCaseStatement();
+SyntaxNode* parseCaseListElement();
 int isRepetetiveStatementNext();
 SyntaxNode* parseRepetetiveStatement();
 SyntaxNode* parseWhileStatement();
 SyntaxNode* parseForStatement();
+SyntaxNode* parseForList();
+SyntaxNode* parseTo();
+SyntaxNode* parseDownTo();
 SyntaxNode* parseRepeatStatement();
 int isWithStatementNext();
 SyntaxNode* parseWithStatement();
+SyntaxNode* parseRecordVariableList();
 Token* readNext(enum TokenType type);
 int isNext(enum TokenType type);
 int isNthTypeNext(enum TokenType type, int n);
@@ -1099,6 +1106,10 @@ char* getNodeType(SyntaxNode* node) {
             return "Greater Than Or Equal Node";
         case IN_NODE:
             return "In Node";
+        case TO_NODE:
+            return "To Node";
+        case DOWN_TO_NODE:
+            return "Down To Node";
         default:
             return "UNDEFINED NODE TYPE";
     }
@@ -2404,7 +2415,34 @@ SyntaxNode* parseIfStatement() {
 }
 
 SyntaxNode* parseCaseStatement() {
-    return NULL;
+    SyntaxNode* node = createNode();
+    node -> type = CASE_STATEMENT_NODE;
+    node -> nodes = createNodeList();
+    readNext(CASE);
+    addNode(node -> nodes, parseExpression());
+    readNext(OF);
+    addNode(node -> nodes, parseCaseListElement());
+    while (isNext(SEMICOLON) && !isNthTypeNext(ELSE, 1)) {
+        readNext(SEMICOLON);
+        addNode(node -> nodes, parseCaseListElement());
+    }
+    if (isNext(SEMICOLON)) {
+        readNext(SEMICOLON);
+        readNext(ELSE);
+        addNode(node -> nodes, parseStatements());
+    }
+    readNext(END);
+    return node;
+}
+
+SyntaxNode* parseCaseListElement() {
+    SyntaxNode* node = createNode();
+    node -> nodes = createNodeList();
+    node -> type =  CASE_LIST_ELEMENT_NODE;
+    addNode(node -> nodes, parseConstantList());
+    readNext(COLON);
+    addNode(node -> nodes, parseStatement());
+    return node;
 }
 
 int isRepetetiveStatementNext() {
@@ -2414,19 +2452,85 @@ int isRepetetiveStatementNext() {
 }
 
 SyntaxNode* parseRepetetiveStatement() {
-    return NULL;
+    if (isNext(WHILE)) {
+        return parseWhileStatement();
+    }
+    if (isNext(FOR)) {
+        return parseForStatement();
+    }
+    if (isNext(REPEAT)) {
+        return parseRepeatStatement();
+    }
+    printf("Failed to parse repetetive statement\n");
+    exit(1);
 }
 
 SyntaxNode* parseWhileStatement() {
-    return NULL;
+    SyntaxNode* node = createNode();
+    node -> nodes = createNodeList();
+    node -> type = WHILE_STATEMENT_NODE;
+    readNext(WHILE);
+    addNode(node -> nodes, parseExpression());
+    readNext(DO);
+    addNode(node -> nodes, parseStatement());
+    return node;
 }
 
 SyntaxNode* parseForStatement() {
-    return NULL;
+    SyntaxNode* node = createNode();
+    node -> nodes = createNodeList();
+    node -> type = FOR_STATEMENT_NODE;
+    readNext(FOR);
+    addNode(node -> nodes, parseIdentifier());
+    readNext(ASSIGNMENT);
+    addNode(node -> nodes, parseForList());
+    readNext(DO);
+    addNode(node -> nodes, parseStatement());
+    return node;
+}
+
+SyntaxNode* parseForList() {
+    SyntaxNode* node = createNode();
+    node -> nodes = createNodeList();
+    node -> type = FOR_LIST_NODE;
+    addNode(node -> nodes, parseExpression());
+    if (isNext(TO)) {
+        addNode(node -> nodes, parseTo());
+        addNode(node -> nodes, parseExpression());
+        return node;
+    }
+    if (isNext(DOWNTO)) {
+        addNode(node -> nodes, parseDownTo());
+        addNode(node -> nodes, parseExpression());
+        return node;
+    }
+    printf("Failed to parse for list\n");
+    exit(1);
+}
+
+SyntaxNode* parseTo() {
+    readNext(TO);
+    SyntaxNode* node = createNode();
+    node -> type = TO_NODE;
+    return node;
+}
+
+SyntaxNode* parseDownTo() {
+    readNext(DOWNTO);
+    SyntaxNode* node = createNode();
+    node -> type = DOWN_TO_NODE;
+    return node;
 }
 
 SyntaxNode* parseRepeatStatement() {
-    return NULL;
+    SyntaxNode* node = createNode();
+    node -> type = REPEAT_STATEMENT_NODE;
+    node -> nodes = createNodeList();
+    readNext(REPEAT);
+    addNode(node -> nodes, parseStatements());
+    readNext(UNTIL);
+    addNode(node -> nodes, parseExpression());
+    return node;
 }
 
 int isWithStatementNext() {
@@ -2434,7 +2538,26 @@ int isWithStatementNext() {
 }
 
 SyntaxNode* parseWithStatement() {
-    return NULL;
+    SyntaxNode* node = createNode();
+    node -> type = WITH_STATEMENT_NODE;
+    node -> nodes = createNodeList();
+    readNext(WITH);
+    addNode(node -> nodes, parseRecordVariableList());
+    readNext(DO);
+    addNode(node -> nodes, parseStatement());
+    return node;
+}
+
+SyntaxNode* parseRecordVariableList() {
+    SyntaxNode* node = createNode();
+    node -> nodes = createNodeList();
+    node -> type = RECORD_VARIABLE_LIST_NODE;
+    addNode(node -> nodes, parseVariable());
+    while (isNext(COMMA)) {
+        readNext(COMMA);
+        addNode(node -> nodes, parseVariable());
+    }
+    return node;
 }
 
 #pragma endregion
