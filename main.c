@@ -571,7 +571,7 @@ char* getTokenType(enum TokenType type) {
 void printTokenBuffer() {
     printf("Tokens:\n");
     for (int i = 0; i < bufferIndex; i++) {
-        printf("Token:\n\t type: %s\n\t data: %s\n", getTokenType(tokenBuffer[i] -> type), tokenBuffer[i] -> value);
+        printToken(tokenBuffer[i]);
     }
     printf("End Tokens\n");
 }
@@ -672,8 +672,6 @@ void lex(FILE* file) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, IMPLEMENTATION);
             } else if (strcasecmp(identifier, "label") == 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, LABEL);
-            } else if (strcasecmp(identifier, "main") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, MAIN);
             } else if (strcasecmp(identifier, "mod") == 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, MOD);
             } else if (strcasecmp(identifier, "nil") == 0) {
@@ -789,7 +787,7 @@ Token* createToken(char* data, enum TokenType type) {
 }
 
 void printToken(Token* token) {
-    printf("Token\n data: \"%s\", type \"%d\"\n", token -> value, token -> type);
+    printf("Token:\n\t type: %s\n\t data: %s\n", getTokenType(token -> type), token -> value);
 }
 
 char* readNumber(FILE* file, char startingChar) {
@@ -2404,7 +2402,6 @@ SyntaxNode* parseIfStatement() {
     node -> nodes = createNodeList();
     readNext(IF);
     addNode(node -> nodes, parseExpression());
-    printToken(tokenBuffer[bufferIndex]);
     readNext(THEN);
     addNode(node -> nodes, parseStatement());
     if (isNext(ELSE)) {
