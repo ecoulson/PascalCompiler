@@ -195,6 +195,15 @@ enum SyntaxNodeType {
     ADDITION_NODE,
     SUBTRACTION_NODE,
     OR_NODE,
+    FUNCTION_TYPE_NODE,
+    PROCEDURE_TYPE_NODE,
+    EQUAL_NODE,
+    NOT_EQUAL_NODE,
+    LESS_THAN_NODE,
+    LESS_THAN_OR_EQUAL_NODE,
+    GREATER_THAN_NODE,
+    GREATER_THAN_OR_EQUAL_NODE,
+    IN_NODE
 };
 
 #pragma endregion
@@ -250,6 +259,7 @@ SyntaxNode* parseSign();
 SyntaxNode* parseCharConstant();
 SyntaxNode* parseTypeDefinitionList();
 SyntaxNode* parseTypeDefinition();
+int isTypeNext();
 SyntaxNode* parseType();
 int isNextSimpleType();
 SyntaxNode* parseSimpleType();
@@ -275,6 +285,8 @@ SyntaxNode* parseTag();
 SyntaxNode* parseVariant();
 SyntaxNode* parseConstantList();
 SyntaxNode* parsePointerType();
+SyntaxNode* parseProcedureType();
+SyntaxNode* parseFunctionType();
 SyntaxNode* parseVariableDeclarationList();
 SyntaxNode* parseVariableDeclaration();
 SyntaxNode* parseProcedureDeclaration();
@@ -287,11 +299,15 @@ SyntaxNode* parseCompoundStatement();
 SyntaxNode* parseStatements();
 SyntaxNode* parseStatement();
 SyntaxNode* parseUnlabelledStatement();
+int isSimpleStatementNext();
+SyntaxNode* parseSimpleStatement();
 int isAssignmentNext();
-int isVariableNext();
 SyntaxNode* parseAssignmentStatement();
+int isVariableNext();
 SyntaxNode* parseVariable();
 SyntaxNode* parseExpression();
+int isRelationalOperatorNext();
+SyntaxNode* parseRelationalOperator();
 SyntaxNode* parseSimpleExpression();
 int isAdditiveOperatorNext();
 SyntaxNode* parseAdditiveOperator();
@@ -318,6 +334,20 @@ SyntaxNode* parseActualParameter();
 SyntaxNode* parseParameterWidth();
 SyntaxNode* parseGotoStatement();
 SyntaxNode* parseEmptyStatement();
+int isStructuredStatementNext();
+SyntaxNode* parseStructuredStatement();
+int isCompoundStatementNext();
+int isConditionalStatementNext();
+SyntaxNode* parseConditionalStatement();
+SyntaxNode* parseIfStatement();
+SyntaxNode* parseCaseStatement();
+int isRepetetiveStatementNext();
+SyntaxNode* parseRepetetiveStatement();
+SyntaxNode* parseWhileStatement();
+SyntaxNode* parseForStatement();
+SyntaxNode* parseRepeatStatement();
+int isWithStatementNext();
+SyntaxNode* parseWithStatement();
 Token* readNext(enum TokenType type);
 int isNext(enum TokenType type);
 int isNthTypeNext(enum TokenType type, int n);
@@ -1053,6 +1083,24 @@ char* getNodeType(SyntaxNode* node) {
             return "Subtraction Node";
         case OR_NODE:
             return "Or Node";
+        case FUNCTION_TYPE_NODE:
+            return "Function Type Node";
+        case PROCEDURE_TYPE_NODE:
+            return "Procedure Type Node";
+        case EQUAL_NODE:
+            return "Equal Node";
+        case NOT_EQUAL_NODE:
+            return "Not Equal Node";
+        case LESS_THAN_NODE:
+            return "Less Than Node";
+        case LESS_THAN_OR_EQUAL_NODE:
+            return "Less Than Or Equal Node";
+        case GREATER_THAN_NODE:
+            return "Greater Than Node";
+        case GREATER_THAN_OR_EQUAL_NODE:
+            return "Greater Than Or Equal Node";
+        case IN_NODE:
+            return "In Node";
         default:
             return "UNDEFINED NODE TYPE";
     }
@@ -1333,8 +1381,22 @@ SyntaxNode* parseTypeDefinition() {
     node -> type = TYPE_DEFINITION_NODE;
     addNode(list, parseIdentifier());
     readNext(EQUAL);
-    addNode(list, parseType());
+    if (isTypeNext()) {
+        addNode(list, parseType());
+    }
+    if (isNext(FUNCTION)) {
+        addNode(list, parseFunctionType());
+    }
+    if (isNext(PROCEDURE)) {
+        addNode(list, parseProcedureType());
+    }
     return node;
+}
+
+int isTypeNext() {
+    return isNextSimpleType() ||
+            isNextStructuredType() ||
+            isNext(POINTER);
 }
 
 SyntaxNode* parseType() {
@@ -1638,6 +1700,30 @@ SyntaxNode* parsePointerType() {
     return node;
 }
 
+SyntaxNode* parseFunctionType() {
+    readNext(FUNCTION);
+    SyntaxNode* node = createNode();
+    node -> type = FUNCTION_TYPE_NODE;
+    node -> nodes = createNodeList();
+    if (isNext(LEFT_PARENTHESES)) {
+        addNode(node -> nodes , parseFormalParameterList());
+    }
+    readNext(COLON);
+    addNode(node -> nodes, parseTypeIdentifier());
+    return node;
+}
+
+SyntaxNode* parseProcedureType() {
+    readNext(PROCEDURE);
+    SyntaxNode* node = createNode();
+    node -> type = PROCEDURE_TYPE_NODE;
+    node -> nodes = createNodeList();
+    if (isNext(LEFT_PARENTHESES)) {
+        addNode(node -> nodes , parseFormalParameterList());
+    }
+    return node;
+}
+
 SyntaxNode* parseVariableDeclarationList() {
     readNext(VAR);
     SyntaxNode* node = createNode();
@@ -1721,7 +1807,7 @@ SyntaxNode* parseParameterGroup() {
     SyntaxNode* node = createNode();
     node -> nodes = createNodeList();
     node -> type = PARAMETER_GROUP_NODE;
-    addNode(node -> nodes, parseIdentifier());
+    addNode(node -> nodes, parseIdentifierList());
     readNext(COLON);
     addNode(node -> nodes, parseTypeIdentifier());
     return node;
@@ -1760,6 +1846,8 @@ SyntaxNode* parseUsesUnits() {
 }
 
 #pragma endregion
+
+#pragma region Statements
 
 SyntaxNode* parseCompoundStatement() {
     readNext(BEGIN);
@@ -1806,6 +1894,23 @@ SyntaxNode* parseStatement() {
 }
 
 SyntaxNode* parseUnlabelledStatement() {
+    if (isSimpleStatementNext()) {
+        return parseSimpleStatement();
+    }
+    if (isStructuredStatementNext()) {
+        return parseStructuredStatement();
+    }
+    printf("Failed to parse Unlabelled Statement");
+    exit(1);
+}
+
+int isSimpleStatementNext() {
+    return isNext(GOTO) ||
+            isAssignmentNext() ||
+            isProcedureNext();
+}
+
+SyntaxNode* parseSimpleStatement() {
     if (isAssignmentNext()) {
         return parseAssignmentStatement();
     }
@@ -1887,7 +1992,62 @@ SyntaxNode* parseExpression() {
     node -> type = EXPRESSION_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseSimpleExpression());
+    if (isRelationalOperatorNext()) {
+        addNode(node -> nodes, parseRelationalOperator());
+        addNode(node -> nodes, parseExpression());
+    }
     return node;
+}
+
+int isRelationalOperatorNext() {
+    return isNext(EQUAL) ||
+            isNext(NOT_EQUAL) ||
+            isNext(LESS_THAN) ||
+            isNext(LESS_THAN_OR_EQUAL) ||
+            isNext(GREATER_THAN) ||
+            isNext(GREATER_THAN_OR_EQUAL) ||
+            isNext(IN);
+}
+
+SyntaxNode* parseRelationalOperator() {
+    SyntaxNode* node = createNode();
+    if (isNext(EQUAL)) {
+        readNext(EQUAL);
+        node -> type = EQUAL_NODE;
+        return node;
+    }
+    if (isNext(NOT_EQUAL)) {
+        readNext(NOT_EQUAL);
+        node -> type = NOT_EQUAL_NODE;
+        return node;
+    }
+    if (isNext(LESS_THAN)) {
+        readNext(LESS_THAN);
+        node -> type = LESS_THAN_NODE;
+        return node;
+    }
+    if (isNext(LESS_THAN_OR_EQUAL)) {
+        readNext(LESS_THAN_OR_EQUAL);
+        node -> type = LESS_THAN_OR_EQUAL_NODE;
+        return node;
+    }
+    if (isNext(GREATER_THAN)) {
+        readNext(GREATER_THAN);
+        node -> type = GREATER_THAN_NODE;
+        return node;
+    }
+    if (isNext(GREATER_THAN_OR_EQUAL)) {
+        readNext(GREATER_THAN_OR_EQUAL);
+        node -> type = GREATER_THAN_OR_EQUAL_NODE;
+        return node;
+    }
+    if (isNext(IN)) {
+        readNext(IN);
+        node -> type = IN_NODE;
+        return node;
+    }
+    printf("Failed to parse relational operator\n");
+    exit(1);
 }
 
 SyntaxNode* parseSimpleExpression() {
@@ -1938,7 +2098,6 @@ SyntaxNode* parseTerm() {
         addNode(node -> nodes, parseMultiplicativeOperator());
         addNode(node -> nodes, parseTerm());
     }
-    printToken(tokenBuffer[bufferIndex]);
     return node;
 }
 
@@ -2186,6 +2345,102 @@ SyntaxNode* parseEmptyStatement() {
     node -> type = EMPTY_STATEMENT_NODE;
     return node;
 }
+
+int isStructuredStatementNext() {
+    return isCompoundStatementNext() ||
+            isConditionalStatementNext() ||
+            isRepetetiveStatementNext() ||
+            isWithStatementNext();
+}
+
+SyntaxNode* parseStructuredStatement() {
+    if (isCompoundStatementNext()) {
+        return parseCompoundStatement();
+    }
+    if (isConditionalStatementNext()) {
+        return parseConditionalStatement();
+    }
+    if (isRepetetiveStatementNext()) {
+        return parseRepetetiveStatement();
+    }
+    if (isWithStatementNext()) {
+        return parseWithStatement();
+    }
+    printf("Failed to parse structured statement\n");
+    exit(1);
+}
+
+int isCompoundStatementNext() {
+    return isNext(BEGIN);
+}
+
+int isConditionalStatementNext() {
+    return isNext(IF) ||
+            isNext(CASE);
+}
+
+SyntaxNode* parseConditionalStatement() {
+    if (isNext(IF)) {
+        return parseIfStatement();
+    }
+    if (isNext(CASE)) {
+        return parseCaseStatement();
+    }
+    printf("Failed to parse conditional statement\n");
+    exit(1);
+}
+
+SyntaxNode* parseIfStatement() {
+    SyntaxNode* node = createNode();
+    node -> type = IF_STATEMENT_NODE;
+    node -> nodes = createNodeList();
+    readNext(IF);
+    addNode(node -> nodes, parseExpression());
+    printToken(tokenBuffer[bufferIndex]);
+    readNext(THEN);
+    addNode(node -> nodes, parseStatement());
+    if (isNext(ELSE)) {
+        readNext(ELSE);
+        addNode(node -> nodes, parseStatement());
+    }
+    return node;
+}
+
+SyntaxNode* parseCaseStatement() {
+    return NULL;
+}
+
+int isRepetetiveStatementNext() {
+    return isNext(WHILE) ||
+            isNext(FOR) ||
+            isNext(REPEAT);
+}
+
+SyntaxNode* parseRepetetiveStatement() {
+    return NULL;
+}
+
+SyntaxNode* parseWhileStatement() {
+    return NULL;
+}
+
+SyntaxNode* parseForStatement() {
+    return NULL;
+}
+
+SyntaxNode* parseRepeatStatement() {
+    return NULL;
+}
+
+int isWithStatementNext() {
+    return isNext(WITH);
+}
+
+SyntaxNode* parseWithStatement() {
+    return NULL;
+}
+
+#pragma endregion
 
 Token* readNext(enum TokenType type) {
     if (tokenBuffer[bufferIndex] -> type != type) {
