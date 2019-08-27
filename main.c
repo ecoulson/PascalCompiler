@@ -584,47 +584,33 @@ void lex(FILE* file) {
             ch = fgetc(file);
             if (ch == '>') {
                 tokenBuffer[bufferIndex++] = createToken("<>", NOT_EQUAL);
-                ch = fgetc(file);
             } else if (ch == '=') {
                 tokenBuffer[bufferIndex++] = createToken("<=", LESS_THAN_OR_EQUAL);
-                ch = fgetc(file);
             } else {
                 tokenBuffer[bufferIndex++] = createToken("<", LESS_THAN);
-                ch = fgetc(file);
             }
-        }
-        if (ch == '(') {
+        } else if (ch == '(') {
             if (fgetc(file) == '*') {
                 readComment(file);
-                ch = fgetc(file);
-                printf("%c\n", ch);
             } else {
+                tokenBuffer[bufferIndex++] = createToken("(", LEFT_PARENTHESES);
                 fseek(file, -1, SEEK_CUR);
             }
-        }
-        if (ch == ':') {
+        } else if (ch == ':') {
             ch = fgetc(file);
             if (ch == '=') {
                 tokenBuffer[bufferIndex++] = createToken(":=", ASSIGNMENT);
-                ch = fgetc(file);
             } else {
                 fseek(file, -1, SEEK_CUR);
                 tokenBuffer[bufferIndex++] = createToken(":", COLON);
-                ch = fgetc(file);
             }
-        }
-        if (ch >= '0' && ch <= '9') {
+        } else if (ch >= '0' && ch <= '9') {
             tokenBuffer[bufferIndex++] = createToken(readNumber(file, ch), NUMBER);
-            ch = fgetc(file);
-        }
-        if (ch == '"' || ch == '\'') {
+        } else if (ch == '"' || ch == '\'') {
             tokenBuffer[bufferIndex++] = createToken(readString(file, ch), STRING);
-            ch = fgetc(file);
-        }
-        if (ch == '{') {
+        } else if (ch == '{') {
             readBraceComment(file);
-        }
-        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+        } else if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
             char* identifier = readIdentifier(file, ch);
             if (strcasecmp(identifier, "and") == 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, AND);
@@ -725,61 +711,59 @@ void lex(FILE* file) {
             } else if (strcmp(identifier, "") != 0) {
                 tokenBuffer[bufferIndex++] = createToken(identifier, IDENTIFIER);
             }
-        }
-        switch (ch)
-        {
-            case '+':
-                tokenBuffer[bufferIndex++] = createToken("+", ADDITION);
-                break;
-            case '-':
-                tokenBuffer[bufferIndex++] = createToken("-", SUBTRACTION);
-                break;
-            case '*':
-                tokenBuffer[bufferIndex++] = createToken("*", MULTIPLICATION);
-                break;
-            case '>':
-                tokenBuffer[bufferIndex++] = createToken(">", GREATER_THAN);
-                break;
-            case '[':
-                tokenBuffer[bufferIndex++] = createToken("[", LEFT_BRACKET);
-                break;
-            case ']':
-                tokenBuffer[bufferIndex++] = createToken("]", RIGHT_BRACKET);
-                break;
-            case '(':
-                tokenBuffer[bufferIndex++] = createToken("(", LEFT_PARENTHESES);
-                break;
-            case ')':
-                tokenBuffer[bufferIndex++] = createToken(")", RIGHT_PARENTHESES);
-                break;
-            case '.':
-                tokenBuffer[bufferIndex++] = createToken(".", DOT);
-                break;
-            case ',':
-                tokenBuffer[bufferIndex++] = createToken(",", COMMA);
-                break;
-            case ';':
-                tokenBuffer[bufferIndex++] = createToken(";", SEMICOLON);
-                break;
-            case '=':
-                tokenBuffer[bufferIndex++] = createToken("=", EQUAL);
-                break;
-            case '@':
-                tokenBuffer[bufferIndex++] = createToken("@", AT);
-                break;
-            case '^':
-                tokenBuffer[bufferIndex++] = createToken("^", POINTER);
-                break;
-            case '/':
-                tokenBuffer[bufferIndex++] = createToken("/", DIVISION);
-                break;
-            case ' ':
-            case '\t':
-            case '\n':
-            case '\r':
-                break;
-            default:
-                break;
+        } else {
+            switch (ch)
+            {
+                case '+':
+                    tokenBuffer[bufferIndex++] = createToken("+", ADDITION);
+                    break;
+                case '-':
+                    tokenBuffer[bufferIndex++] = createToken("-", SUBTRACTION);
+                    break;
+                case '*':
+                    tokenBuffer[bufferIndex++] = createToken("*", MULTIPLICATION);
+                    break;
+                case '>':
+                    tokenBuffer[bufferIndex++] = createToken(">", GREATER_THAN);
+                    break;
+                case '[':
+                    tokenBuffer[bufferIndex++] = createToken("[", LEFT_BRACKET);
+                    break;
+                case ']':
+                    tokenBuffer[bufferIndex++] = createToken("]", RIGHT_BRACKET);
+                    break;
+                case ')':
+                    tokenBuffer[bufferIndex++] = createToken(")", RIGHT_PARENTHESES);
+                    break;
+                case '.':
+                    tokenBuffer[bufferIndex++] = createToken(".", DOT);
+                    break;
+                case ',':
+                    tokenBuffer[bufferIndex++] = createToken(",", COMMA);
+                    break;
+                case ';':
+                    tokenBuffer[bufferIndex++] = createToken(";", SEMICOLON);
+                    break;
+                case '=':
+                    tokenBuffer[bufferIndex++] = createToken("=", EQUAL);
+                    break;
+                case '@':
+                    tokenBuffer[bufferIndex++] = createToken("@", AT);
+                    break;
+                case '^':
+                    tokenBuffer[bufferIndex++] = createToken("^", POINTER);
+                    break;
+                case '/':
+                    tokenBuffer[bufferIndex++] = createToken("/", DIVISION);
+                    break;
+                case ' ':
+                case '\t':
+                case '\n':
+                case '\r':
+                    break;
+                default:
+                    break;
+            }
         }
         ch = fgetc(file);
     }
