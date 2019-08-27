@@ -240,6 +240,7 @@ char* readIdentifier(FILE* file, char startingChar);
 char* readNumber(FILE* file, char startingChar);
 char* readString(FILE* file, char openingQuote);
 void readComment(FILE* file);
+void readBraceComment(FILE* file);
 void printTokenBuffer();
 
 // Parse
@@ -295,7 +296,7 @@ SyntaxNode* parseProcedureDeclaration();
 SyntaxNode* parseFormalParameterList();
 SyntaxNode* parseFormalParameterSection();
 SyntaxNode* parseParameterGroup();
-SyntaxNode* parseFunctionDeclarationList();
+SyntaxNode* parseFunctionDeclaration();
 SyntaxNode* parseUsesUnits();
 SyntaxNode* parseCompoundStatement();
 SyntaxNode* parseStatements();
@@ -592,6 +593,15 @@ void lex(FILE* file) {
                 ch = fgetc(file);
             }
         }
+        if (ch == '(') {
+            if (fgetc(file) == '*') {
+                readComment(file);
+                ch = fgetc(file);
+                printf("%c\n", ch);
+            } else {
+                fseek(file, -1, SEEK_CUR);
+            }
+        }
         if (ch == ':') {
             ch = fgetc(file);
             if (ch == '=') {
@@ -603,15 +613,6 @@ void lex(FILE* file) {
                 ch = fgetc(file);
             }
         }
-        if (ch == '/') {
-            if (fgetc(file) == '/') {
-                readComment(file);
-            } else {
-                fseek(file, -1, SEEK_CUR);
-                tokenBuffer[bufferIndex++] = createToken("/", DIVISION);
-                ch = fgetc(file);
-            }
-        }
         if (ch >= '0' && ch <= '9') {
             tokenBuffer[bufferIndex++] = createToken(readNumber(file, ch), NUMBER);
             ch = fgetc(file);
@@ -619,6 +620,9 @@ void lex(FILE* file) {
         if (ch == '"' || ch == '\'') {
             tokenBuffer[bufferIndex++] = createToken(readString(file, ch), STRING);
             ch = fgetc(file);
+        }
+        if (ch == '{') {
+            readBraceComment(file);
         }
         if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
             char* identifier = readIdentifier(file, ch);
@@ -766,12 +770,15 @@ void lex(FILE* file) {
             case '^':
                 tokenBuffer[bufferIndex++] = createToken("^", POINTER);
                 break;
+            case '/':
+                tokenBuffer[bufferIndex++] = createToken("/", DIVISION);
+                break;
             case ' ':
             case '\t':
             case '\n':
             case '\r':
                 break;
-            default: 
+            default:
                 break;
         }
         ch = fgetc(file);
@@ -787,7 +794,7 @@ Token* createToken(char* data, enum TokenType type) {
 }
 
 void printToken(Token* token) {
-    printf("Token:\n\t type: %s\n\t data: %s\n", getTokenType(token -> type), token -> value);
+    printf("Token:\n\t type: %s\n\t data: '%s'\n", getTokenType(token -> type), token -> value);
 }
 
 char* readNumber(FILE* file, char startingChar) {
@@ -809,8 +816,12 @@ char* readNumber(FILE* file, char startingChar) {
         size++;
         ch = fgetc(file);
     }
-    fseek(file, -size, SEEK_CUR);
-    if (wasDot) {
+    if (ch == EOF) {
+        fseek(file, -size + 1, SEEK_CUR);
+    } else {
+        fseek(file, -size, SEEK_CUR);
+    }
+    if (wasDot && ch != EOF) {
         fseek(file, -1, SEEK_CUR);
     }
 
@@ -833,7 +844,11 @@ char* readIdentifier(FILE* file, char startingChar) {
         size++;
         ch = fgetc(file);
     }
-    fseek(file, -size, SEEK_CUR);
+    if (ch == EOF) {
+        fseek(file, -size + 1, SEEK_CUR);
+    } else {
+        fseek(file, -size, SEEK_CUR);
+    }
 
     char* identifier = (char*)malloc(sizeof(char) * size + 1);
     int i = 0;
@@ -855,6 +870,9 @@ char* readString(FILE* file, char openingQuote) {
         size++;
         ch = fgetc(file);
     }
+    if (size == 0) {
+        return "";
+    }
     fseek(file, -size, SEEK_CUR);
 
     char* string = (char*)malloc(sizeof(char) * size + 1);
@@ -869,10 +887,23 @@ char* readString(FILE* file, char openingQuote) {
     return string;
 }
 
+void readBraceComment(FILE* file) {
+    char ch = fgetc(file);
+    int flag = 0;
+    while (ch != '}') {
+        ch = fgetc(file);
+    }
+}
+
 void readComment(FILE* file) {
     char ch = fgetc(file);
-    while (ch != '\n') {
+    while (1) {
         ch = fgetc(file);
+        if (fgetc(file) == ')' && ch == '*') {
+            return;
+        } else {
+            fseek(file, -1, SEEK_CUR);
+        }
     }
 }
 
@@ -1115,7 +1146,7 @@ char* getNodeType(SyntaxNode* node) {
 
 void printNode(SyntaxNode* node, int depth) {
     if (node != NULL) {
-        printf("data: %s type: %s\n", node -> data, getNodeType(node));
+        printf("data: '%s' type: %s\n", node -> data, getNodeType(node));
         if (node -> nodes != NULL && node -> nodes -> size > 0) {
             printf("---%d---\nchildren of: %s. Number of children: %d\n", depth, getNodeType(node), node -> nodes -> size);
             for (int i = 0; i < node -> nodes -> size; i++) {
@@ -1228,7 +1259,7 @@ SyntaxNode* parseBlock() {
         } else if (isNext(PROCEDURE)) {
             addNode(list, parseProcedureDeclaration());
         }  else if (isNext(FUNCTION)) {
-            addNode(list, parseFunctionDeclarationList());
+            addNode(list, parseFunctionDeclaration());
         } else if (isNext(USES)) {
             addNode(list, parseUsesUnits());
         } else if (isNext(IMPLEMENTATION)) {
@@ -1767,6 +1798,7 @@ SyntaxNode* parseProcedureDeclaration() {
     }
     readNext(SEMICOLON);
     addNode(node -> nodes, parseBlock());
+    readNext(SEMICOLON);
     return node;
 }
 
@@ -1774,6 +1806,10 @@ SyntaxNode* parseFormalParameterList() {
     readNext(LEFT_PARENTHESES);
     SyntaxNode* node = createNode();
     node -> type = FORMAL_PARAMETER_LIST_NODE;
+    if (isNext(RIGHT_PARENTHESES)) {
+        readNext(RIGHT_PARENTHESES);
+        return node;
+    }
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseFormalParameterSection());
     while (isNext(SEMICOLON)) {
@@ -1788,18 +1824,21 @@ SyntaxNode* parseFormalParameterSection() {
     if (isNext(IDENTIFIER)) {
         return parseParameterGroup();
     } else if (isNext(VAR)) {
+        readNext(VAR);
         SyntaxNode* node = createNode();
         node -> type = VAR_PARAMETER_GROUP_NODE;
         node -> nodes = createNodeList();
         addNode(node -> nodes, parseParameterGroup());
         return node;
     } else if (isNext(FUNCTION)) {
+        readNext(FUNCTION);
         SyntaxNode* node = createNode();
         node -> type = FUNCTION_PARAMETER_GROUP_NODE;
         node -> nodes = createNodeList();
         addNode(node -> nodes, parseParameterGroup());
         return node;
     } else if (isNext(PROCEDURE)) {
+        readNext(PROCEDURE);
         SyntaxNode* node = createNode();
         node -> type = PROCEDURE_PARAMETER_GROUP_NODE;
         node -> nodes = createNodeList();
@@ -1820,7 +1859,7 @@ SyntaxNode* parseParameterGroup() {
     return node;
 }
 
-SyntaxNode* parseFunctionDeclarationList() {
+SyntaxNode* parseFunctionDeclaration() {
     readNext(FUNCTION);
     SyntaxNode* node = createNode();
     node -> type = FUNCTION_DECLARATION_NODE;
@@ -1833,6 +1872,7 @@ SyntaxNode* parseFunctionDeclarationList() {
     addNode(node -> nodes, parseTypeIdentifier());
     readNext(SEMICOLON);
     addNode(node -> nodes, parseBlock());
+    readNext(SEMICOLON);
     return node;
 }
 
@@ -1863,9 +1903,6 @@ SyntaxNode* parseCompoundStatement() {
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseStatements());
     readNext(END);
-    if (isNext(SEMICOLON)) {
-        readNext(SEMICOLON);
-    }
     return node;
 }
 
@@ -1913,7 +1950,8 @@ SyntaxNode* parseUnlabelledStatement() {
 int isSimpleStatementNext() {
     return isNext(GOTO) ||
             isAssignmentNext() ||
-            isProcedureNext();
+            isProcedureNext() ||
+            isNext(IDENTIFIER);
 }
 
 SyntaxNode* parseSimpleStatement() {
@@ -1921,6 +1959,10 @@ SyntaxNode* parseSimpleStatement() {
         return parseAssignmentStatement();
     }
     if (isProcedureNext()) {
+        return parseProcedureStatement();
+    }
+    if (isNext(IDENTIFIER)) {
+        printf("Warn: Possible Ambiguity?\n");
         return parseProcedureStatement();
     }
     if (isNext(GOTO)) {
@@ -2196,16 +2238,18 @@ SyntaxNode* parseFunctionDesignator() {
     node -> type = FUNCTION_DESIGNATOR_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseIdentifier());
-    readNext(LEFT_PARENTHESES);
-    addNode(node -> nodes, parseParameterList());
-    readNext(RIGHT_PARENTHESES);
+    if (isNext(LEFT_PARENTHESES)) {
+        readNext(LEFT_PARENTHESES);
+        addNode(node -> nodes, parseParameterList());
+        readNext(RIGHT_PARENTHESES);
+    }
     return node;
 }
 
 SyntaxNode* parseParameterList() {
     SyntaxNode* node = createNode();
     node -> type = PARAMETER_LIST_NODE;
-    node -> nodes  = createNodeList();
+    node -> nodes = createNodeList();
     addNode(node -> nodes, parseActualParameter());
     while (isNext(COMMA)) {
         readNext(COMMA);
@@ -2321,8 +2365,7 @@ SyntaxNode* parseNotFactor() {
 }
 
 int isProcedureNext() {
-    return (isNext(IDENTIFIER) && isNthTypeNext(LEFT_PARENTHESES, 1)) || 
-            isNext(IDENTIFIER);
+    return isNext(IDENTIFIER) && isNthTypeNext(LEFT_PARENTHESES, 1);
 }
 
 SyntaxNode* parseProcedureStatement() {
@@ -2561,7 +2604,12 @@ SyntaxNode* parseRecordVariableList() {
 
 Token* readNext(enum TokenType type) {
     if (tokenBuffer[bufferIndex] -> type != type) {
-        printf("Expected next token to be type %s", getTokenType(type));
+        printf("Expected next token to be type %s\n", getTokenType(type));
+        printToken(tokenBuffer[bufferIndex - 2]);
+        printToken(tokenBuffer[bufferIndex - 1]);
+        printToken(tokenBuffer[bufferIndex]);
+        printToken(tokenBuffer[bufferIndex + 1]);
+        printToken(tokenBuffer[bufferIndex + 2]);
         exit(1);
     }
     return tokenBuffer[bufferIndex++];
@@ -2579,7 +2627,7 @@ int isNthTypeNext(enum TokenType type, int n) {
 
 #pragma endregion
 
-#pragma region List
+#pragma region NodeList
 
 NodeList* createNodeList() {
     NodeList* list = (NodeList*)malloc(sizeof(NodeList));
@@ -2617,5 +2665,23 @@ SyntaxNode* getNode(NodeList* list, int i) {
 }
 
 #pragma endregion
+
+#pragma endregion
+
+#pragma region TokenList
+
+// TODO
+
+#pragma endregion
+
+#pragma region Scope
+
+// TODO
+
+#pragma endregion
+
+#pragma region String
+
+// TODO
 
 #pragma endregion
