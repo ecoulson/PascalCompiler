@@ -1,0 +1,1 @@
+Writeln('Please type the student''s actual mark: ');

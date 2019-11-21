@@ -1,7 +1,6 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include <string.h>
-#define BUFFER_SIZE 10000
 
 #pragma region Enums
 
@@ -228,7 +227,12 @@ typedef struct SyntaxNodeStruct {
     struct NodeListStruct* nodes;
 } SyntaxNode;
 
-
+typedef struct TokenBufferStruct {
+    int bufferIndex;
+    int capacity;
+    int size;
+    struct TokenStruct** tokens;
+} TokenBuffer;
 
 #pragma endregion
 #pragma region FunctionDefs
@@ -238,12 +242,15 @@ Token* createToken(char* data, enum TokenType type);
 void printToken(Token* token);
 char* readIdentifier(FILE* file, char startingChar);
 char* readNumber(FILE* file, char startingChar);
-char* readString(FILE* file, char openingQuote);
+char* readString(FILE* file);
 void readComment(FILE* file);
 void readBraceComment(FILE* file);
 void printTokenBuffer();
+void writeTokenBufferToFile(FILE* file);
 
 // Parse
+char* getNodeType(SyntaxNode* node);
+void writeASTToFile(FILE* file, SyntaxNode* node, int depth);
 void printNode(SyntaxNode* node, int depth);
 SyntaxNode* parse();
 SyntaxNode* parseProgram();
@@ -361,34 +368,51 @@ int isNext(enum TokenType type);
 int isNthTypeNext(enum TokenType type, int n);
 
 // NodeList
-void resize(NodeList* list);
+void resizeNodeList(NodeList* list);
 NodeList* createNodeList();
 void addNode(NodeList* list, SyntaxNode* node);
 SyntaxNode* getNode(NodeList* list, int i);
+
+// String Util
+char* concat(char* s1, char* s2);
+
+// TokenBuffer
+TokenBuffer* createTokenBuffer();
+void addToken(TokenBuffer* buffer, Token* token);
+Token* getToken(TokenBuffer* buffer, int i);
+void resizeTokenBuffer(TokenBuffer* buffer);
 
 #pragma endregion
 #pragma region Code
 
 #pragma region Globals
-Token* tokenBuffer[BUFFER_SIZE];
-int bufferIndex = 0;
+TokenBuffer* tokenBuffer;
+// int bufferIndex = 0;
+int isDebug = 0;
 #pragma endregion
 
 int main(int argc, char *argv[]) {
-    int i;
-    if( argc != 2 )
+    tokenBuffer = createTokenBuffer();
+    if( argc < 2 )
     {
         printf("Must pass a file to be compiled\n");
         exit(EXIT_FAILURE);
     }
-    for (int i = 0; i < BUFFER_SIZE; i++) {
-        tokenBuffer[i] = NULL;
+    if (argc > 2 && strcasecmp(argv[2], "-d") == 0) {
+        printf("PascalCompiler: Compiling in debug mode\n");
+        isDebug = 1;
     }
     FILE* input = fopen(argv[1], "r");
     lex(input);
-    printTokenBuffer();
+    if (isDebug) {
+        FILE* lexOutput = fopen(concat(argv[1], ".lex"), "w+");
+        writeTokenBufferToFile(lexOutput);
+    }
     SyntaxNode* root = parse();
-    printNode(root, 0);
+    if (isDebug) {
+        FILE* astOutput = fopen(concat(argv[1], ".ast"), "w+");
+        writeASTToFile(astOutput, root, 0);
+    }
     return 0;
 }
 
@@ -569,10 +593,17 @@ char* getTokenType(enum TokenType type) {
     }
 }
 
+void writeTokenBufferToFile(FILE* file) {
+    for (int i = 0; i < tokenBuffer -> size; i++) {
+        Token* token = getToken(tokenBuffer, i);
+        fprintf(file, "Token {type: %s, data: '%s'}\n", getTokenType(token -> type), token -> value);
+    }
+}
+
 void printTokenBuffer() {
     printf("Tokens:\n");
-    for (int i = 0; i < bufferIndex; i++) {
-        printToken(tokenBuffer[i]);
+    for (int i = 0; i < tokenBuffer -> size; i++) {
+        printToken(getToken(tokenBuffer, i));
     }
     printf("End Tokens\n");
 }
@@ -583,178 +614,187 @@ void lex(FILE* file) {
         if (ch == '<') {
             ch = fgetc(file);
             if (ch == '>') {
-                tokenBuffer[bufferIndex++] = createToken("<>", NOT_EQUAL);
+                addToken(tokenBuffer, createToken("<>", NOT_EQUAL));
             } else if (ch == '=') {
-                tokenBuffer[bufferIndex++] = createToken("<=", LESS_THAN_OR_EQUAL);
+                addToken(tokenBuffer, createToken("<=", LESS_THAN_OR_EQUAL));
             } else {
-                tokenBuffer[bufferIndex++] = createToken("<", LESS_THAN);
+                addToken(tokenBuffer, createToken("<", LESS_THAN));
+                fseek(file, -1, SEEK_CUR);
+            }
+        } else if (ch == '>') {
+            ch = fgetc(file);
+            if (ch == '=') {
+                addToken(tokenBuffer, createToken(">=", GREATER_THAN_OR_EQUAL));
+            } else {
+                addToken(tokenBuffer, createToken(">", GREATER_THAN));
+                fseek(file, -1, SEEK_CUR);
             }
         } else if (ch == '(') {
             if (fgetc(file) == '*') {
                 readComment(file);
             } else {
-                tokenBuffer[bufferIndex++] = createToken("(", LEFT_PARENTHESES);
+                addToken(tokenBuffer, createToken("(", LEFT_PARENTHESES));
                 fseek(file, -1, SEEK_CUR);
             }
         } else if (ch == ':') {
             ch = fgetc(file);
             if (ch == '=') {
-                tokenBuffer[bufferIndex++] = createToken(":=", ASSIGNMENT);
+                addToken(tokenBuffer, createToken(":=", ASSIGNMENT));
             } else {
                 fseek(file, -1, SEEK_CUR);
-                tokenBuffer[bufferIndex++] = createToken(":", COLON);
+                addToken(tokenBuffer, createToken(":", COLON));
             }
         } else if (ch >= '0' && ch <= '9') {
-            tokenBuffer[bufferIndex++] = createToken(readNumber(file, ch), NUMBER);
-        } else if (ch == '"' || ch == '\'') {
-            tokenBuffer[bufferIndex++] = createToken(readString(file, ch), STRING);
+            addToken(tokenBuffer, createToken(readNumber(file, ch), NUMBER));
+        } else if (ch == '\'') {
+            addToken(tokenBuffer, createToken(readString(file), STRING));
         } else if (ch == '{') {
             readBraceComment(file);
         } else if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
             char* identifier = readIdentifier(file, ch);
             if (strcasecmp(identifier, "and") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, AND);
+                addToken(tokenBuffer, createToken(identifier, AND));
             } else if (strcasecmp(identifier, "array") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, ARRAY);
+                addToken(tokenBuffer, createToken(identifier, ARRAY));
             } else if (strcasecmp(identifier, "begin") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, BEGIN);
+                addToken(tokenBuffer, createToken(identifier, BEGIN));
             } else if (strcasecmp(identifier, "boolean") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, BOOLEAN);
+                addToken(tokenBuffer, createToken(identifier, BOOLEAN));
             } else if (strcasecmp(identifier, "char") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, CHAR);
+                addToken(tokenBuffer, createToken(identifier, CHAR));
             } else if (strcasecmp(identifier, "chr") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, CHR);
+                addToken(tokenBuffer, createToken(identifier, CHR));
             } else if (strcasecmp(identifier, "case") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, CASE);
+                addToken(tokenBuffer, createToken(identifier, CASE));
             } else if (strcasecmp(identifier, "const") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, CONST);
+                addToken(tokenBuffer, createToken(identifier, CONST));
             } else if (strcasecmp(identifier, "div") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, DIV);
+                addToken(tokenBuffer, createToken(identifier, DIV));
             } else if (strcasecmp(identifier, "do") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, DO);
+                addToken(tokenBuffer, createToken(identifier, DO));
             } else if (strcasecmp(identifier, "downto") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, DOWNTO);
+                addToken(tokenBuffer, createToken(identifier, DOWNTO));
             } else if (strcasecmp(identifier, "end") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, END);
+                addToken(tokenBuffer, createToken(identifier, END));
             } else if (strcasecmp(identifier, "else") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, ELSE);
+                addToken(tokenBuffer, createToken(identifier, ELSE));
             } else if (strcasecmp(identifier, "false") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, FALSE_TOKEN);
+                addToken(tokenBuffer, createToken(identifier, FALSE_TOKEN));
             } else if (strcasecmp(identifier, "file") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, PASCAL_FILE);
+                addToken(tokenBuffer, createToken(identifier, PASCAL_FILE));
             } else if (strcasecmp(identifier, "for") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, FOR);
+                addToken(tokenBuffer, createToken(identifier, FOR));
             } else if (strcasecmp(identifier, "forward") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, FORWARD);
+                addToken(tokenBuffer, createToken(identifier, FORWARD));
             } else if (strcasecmp(identifier, "function") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, FUNCTION);
+                addToken(tokenBuffer, createToken(identifier, FUNCTION));
             } else if (strcasecmp(identifier, "goto") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, GOTO);
+                addToken(tokenBuffer, createToken(identifier, GOTO));
             } else if (strcasecmp(identifier, "if") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, IF);
+                addToken(tokenBuffer, createToken(identifier, IF));
             } else if (strcasecmp(identifier, "in") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, IN);
+                addToken(tokenBuffer, createToken(identifier, IN));
             } else if (strcasecmp(identifier, "integer") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, INTEGER);
+                addToken(tokenBuffer, createToken(identifier, INTEGER));
             } else if (strcasecmp(identifier, "interface") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, INTERFACE);
+                addToken(tokenBuffer, createToken(identifier, INTERFACE));
             } else if (strcasecmp(identifier, "implementation") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, IMPLEMENTATION);
+                addToken(tokenBuffer, createToken(identifier, IMPLEMENTATION));
             } else if (strcasecmp(identifier, "label") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, LABEL);
+                addToken(tokenBuffer, createToken(identifier, LABEL));
             } else if (strcasecmp(identifier, "mod") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, MOD);
+                addToken(tokenBuffer, createToken(identifier, MOD));
             } else if (strcasecmp(identifier, "nil") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, NIL);
+                addToken(tokenBuffer, createToken(identifier, NIL));
             } else if (strcasecmp(identifier, "not") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, NOT);
+                addToken(tokenBuffer, createToken(identifier, NOT));
             } else if (strcasecmp(identifier, "of") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, OF);
+                addToken(tokenBuffer, createToken(identifier, OF));
             } else if (strcasecmp(identifier, "or") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, OR);
+                addToken(tokenBuffer, createToken(identifier, OR));
             } else if (strcasecmp(identifier, "packed") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, PACKED);
+                addToken(tokenBuffer, createToken(identifier, PACKED));
             } else if (strcasecmp(identifier, "procedure") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, PROCEDURE);
+                addToken(tokenBuffer, createToken(identifier, PROCEDURE));
             } else if (strcasecmp(identifier, "program") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, PROGRAM);
+                addToken(tokenBuffer, createToken(identifier, PROGRAM));
             } else if (strcasecmp(identifier, "real") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, REAL);
+                addToken(tokenBuffer, createToken(identifier, REAL));
             } else if (strcasecmp(identifier, "record") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, RECORD);
+                addToken(tokenBuffer, createToken(identifier, RECORD));
             } else if (strcasecmp(identifier, "repeat") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, REPEAT);
+                addToken(tokenBuffer, createToken(identifier, REPEAT));
             } else if (strcasecmp(identifier, "set") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, SET);
+                addToken(tokenBuffer, createToken(identifier, SET));
             } else if (strcasecmp(identifier, "string") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, STR);
+                addToken(tokenBuffer, createToken(identifier, STR));
             } else if (strcasecmp(identifier, "then") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, THEN);
+                addToken(tokenBuffer, createToken(identifier, THEN));
             } else if (strcasecmp(identifier, "to") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, TO);
+                addToken(tokenBuffer, createToken(identifier, TO));
             } else if (strcasecmp(identifier, "true") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, TRUE_TOKEN);
+                addToken(tokenBuffer, createToken(identifier, TRUE_TOKEN));
             } else if (strcasecmp(identifier, "type") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, TYPE);
+                addToken(tokenBuffer, createToken(identifier, TYPE));
             } else if (strcasecmp(identifier, "unit") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, UNIT);
+                addToken(tokenBuffer, createToken(identifier, UNIT));
             } else if (strcasecmp(identifier, "until") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, UNTIL);
+                addToken(tokenBuffer, createToken(identifier, UNTIL));
             } else if (strcasecmp(identifier, "uses") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, USES);
+                addToken(tokenBuffer, createToken(identifier, USES));
             } else if (strcasecmp(identifier, "var") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, VAR);
+                addToken(tokenBuffer, createToken(identifier, VAR));
             } else if (strcasecmp(identifier, "while") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, WHILE);
+                addToken(tokenBuffer, createToken(identifier, WHILE));
             } else if (strcasecmp(identifier, "with") == 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, WITH);
+                addToken(tokenBuffer, createToken(identifier, WITH));
             } else if (strcmp(identifier, "") != 0) {
-                tokenBuffer[bufferIndex++] = createToken(identifier, IDENTIFIER);
+                addToken(tokenBuffer, createToken(identifier, IDENTIFIER));
             }
         } else {
             switch (ch)
             {
                 case '+':
-                    tokenBuffer[bufferIndex++] = createToken("+", ADDITION);
+                    addToken(tokenBuffer, createToken("+", ADDITION));
                     break;
                 case '-':
-                    tokenBuffer[bufferIndex++] = createToken("-", SUBTRACTION);
+                    addToken(tokenBuffer, createToken("-", SUBTRACTION));
                     break;
                 case '*':
-                    tokenBuffer[bufferIndex++] = createToken("*", MULTIPLICATION);
+                    addToken(tokenBuffer, createToken("*", MULTIPLICATION));
                     break;
                 case '>':
-                    tokenBuffer[bufferIndex++] = createToken(">", GREATER_THAN);
+                    addToken(tokenBuffer, createToken(">", GREATER_THAN));
                     break;
                 case '[':
-                    tokenBuffer[bufferIndex++] = createToken("[", LEFT_BRACKET);
+                    addToken(tokenBuffer, createToken("[", LEFT_BRACKET));
                     break;
                 case ']':
-                    tokenBuffer[bufferIndex++] = createToken("]", RIGHT_BRACKET);
+                    addToken(tokenBuffer, createToken("]", RIGHT_BRACKET));
                     break;
                 case ')':
-                    tokenBuffer[bufferIndex++] = createToken(")", RIGHT_PARENTHESES);
+                    addToken(tokenBuffer, createToken(")", RIGHT_PARENTHESES));
                     break;
                 case '.':
-                    tokenBuffer[bufferIndex++] = createToken(".", DOT);
+                    addToken(tokenBuffer, createToken(".", DOT));
                     break;
                 case ',':
-                    tokenBuffer[bufferIndex++] = createToken(",", COMMA);
+                    addToken(tokenBuffer, createToken(",", COMMA));
                     break;
                 case ';':
-                    tokenBuffer[bufferIndex++] = createToken(";", SEMICOLON);
+                    addToken(tokenBuffer, createToken(";", SEMICOLON));
                     break;
                 case '=':
-                    tokenBuffer[bufferIndex++] = createToken("=", EQUAL);
+                    addToken(tokenBuffer, createToken("=", EQUAL));
                     break;
                 case '@':
-                    tokenBuffer[bufferIndex++] = createToken("@", AT);
+                    addToken(tokenBuffer, createToken("@", AT));
                     break;
                 case '^':
-                    tokenBuffer[bufferIndex++] = createToken("^", POINTER);
+                    addToken(tokenBuffer, createToken("^", POINTER));
                     break;
                 case '/':
-                    tokenBuffer[bufferIndex++] = createToken("/", DIVISION);
+                    addToken(tokenBuffer, createToken("/", DIVISION));
                     break;
                 case ' ':
                 case '\t':
@@ -778,7 +818,7 @@ Token* createToken(char* data, enum TokenType type) {
 }
 
 void printToken(Token* token) {
-    printf("Token:\n\t type: %s\n\t data: '%s'\n", getTokenType(token -> type), token -> value);
+    printf("Token {type: %s, data: '%s'}\n", getTokenType(token -> type), token -> value);
 }
 
 char* readNumber(FILE* file, char startingChar) {
@@ -846,29 +886,42 @@ char* readIdentifier(FILE* file, char startingChar) {
     return identifier;
 }
 
-char* readString(FILE* file, char openingQuote) {
+char* readString(FILE* file) {
     int size = 0;
-    char startingChar = fgetc(file);
-    char ch = startingChar;
-    while (ch != EOF && ch != openingQuote) {
+    char ch = fgetc(file);
+    char* buffer = (char*)malloc(sizeof(char) * 100);
+    while (ch != '\'') {
+        buffer[size] = ch;
+        ch = fgetc(file);
         size++;
-        ch = fgetc(file);
     }
-    if (size == 0) {
-        return "";
+    if ((ch = fgetc(file)) == '\'') {
+        char* nextString = readString(file);
+        int nextStringSize = 0;
+        while (nextString[nextStringSize] != '\0') {
+            nextStringSize++;
+        }
+        char* string = (char*)malloc(sizeof(char) * (size + nextStringSize + 1));
+        for (int i = 0; i < size; i++) {
+            string[i] = buffer[i];
+        }
+        string[size] = '\'';
+        for (int i = size + 1; i < size + nextStringSize + 1; i++) {
+            string[i] = nextString[i - size - 1];
+        }
+        free(buffer);
+        string[size + nextStringSize + 1] = '\0';
+        return string;
+    } else {
+        char* string = (char*)malloc(sizeof(char) * (size + 1));
+        for (int i = 0; i < size; i++) {
+            string[i] = buffer[i];
+        }
+        free(buffer);
+        fseek(file, -1, SEEK_CUR);
+        string[size] = '\0';
+        return string;
     }
-    fseek(file, -size, SEEK_CUR);
-
-    char* string = (char*)malloc(sizeof(char) * size + 1);
-    int i = 0;
-    string[i++] = startingChar;
-    string[size] = '\0';
-    while (ch != EOF && i < size) {
-        ch = fgetc(file);
-        string[i++] = ch;
-    }
-    fgetc(file);
-    return string;
 }
 
 void readBraceComment(FILE* file) {
@@ -1142,6 +1195,20 @@ void printNode(SyntaxNode* node, int depth) {
     }
 }
 
+void writeASTToFile(FILE* file, SyntaxNode* node, int depth) {
+    char* prefix = (char*)malloc(sizeof(char) * (depth + 1));
+    prefix[depth] = '\0';
+    for (int i = 0; i < depth; i++) {
+        prefix[i] = '\t';
+    }
+    fprintf(file, "%stype: '%s'\tdata: '%s'\n", prefix, getNodeType(node), node -> data);
+    if (node -> nodes != NULL) {
+        for (int i = 0; i < node -> nodes -> size; i++) {
+            writeASTToFile(file, getNode(node -> nodes, i), depth + 1);
+        }
+    }
+}
+
 SyntaxNode* createNode() {
     SyntaxNode* node = (SyntaxNode*)malloc(sizeof(SyntaxNode));
     memset(node, 0, sizeof(SyntaxNode));
@@ -1149,7 +1216,7 @@ SyntaxNode* createNode() {
 }
 
 SyntaxNode* parse() {
-    bufferIndex = 0;
+    tokenBuffer -> bufferIndex = 0;
     return parseProgram();
 }
 
@@ -1161,10 +1228,10 @@ SyntaxNode* parseProgram() {
 
     addNode(nodes, parseProgramHeading());
 
-    if (tokenBuffer[bufferIndex] -> type == INTERFACE) {
-        bufferIndex++;
+    if (getToken(tokenBuffer, tokenBuffer -> bufferIndex) -> type == INTERFACE) {
+        tokenBuffer -> bufferIndex++;
     }
-    while (tokenBuffer[bufferIndex] -> type != DOT) {
+    while (getToken(tokenBuffer, tokenBuffer -> bufferIndex) -> type != DOT) {
         addNode(nodes, parseBlock());
     }
     root -> nodes = nodes;
@@ -1460,7 +1527,7 @@ SyntaxNode* parseSimpleType() {
 }
 
 int isStringType() {
-    return isNext(STR) && tokenBuffer[bufferIndex + 1] -> type == LEFT_BRACKET;
+    return isNext(STR) && getToken(tokenBuffer, tokenBuffer -> bufferIndex + 1) -> type == LEFT_BRACKET;
 }
 
 SyntaxNode* parseStringType() {
@@ -1483,7 +1550,7 @@ int isSubRangeType() {
             isNext(SUBTRACTION) ||
             isNext(STRING) ||
             isNext(CHR) ||
-            (isNext(IDENTIFIER) && tokenBuffer[bufferIndex + 1] -> type == DOT);
+            (isNext(IDENTIFIER) && getToken(tokenBuffer, tokenBuffer -> bufferIndex + 1) -> type == DOT);
 }
 
 SyntaxNode* parseSubrangeType() {
@@ -1513,7 +1580,8 @@ SyntaxNode* parseTypeIdentifier() {
         node -> type = TYPE_IDENTIFIER_NODE;
         return node;
     }
-    Token* token = tokenBuffer[bufferIndex++];
+    Token* token = getToken(tokenBuffer, tokenBuffer -> bufferIndex);
+    tokenBuffer -> bufferIndex++;
     SyntaxNode* node = createNode();
     node -> type = TYPE_IDENTIFIER_NODE;
     node -> data = token -> value;
@@ -1645,7 +1713,7 @@ SyntaxNode* parseFixedPart() {
     node -> type = RECORD_SECTION_LIST_NODE;
     node -> nodes = createNodeList();
     addNode(node -> nodes, parseRecordSection());
-    while (isNext(SEMICOLON) && tokenBuffer[bufferIndex + 1] -> type != CASE) {
+    while (isNext(SEMICOLON) && getToken(tokenBuffer, tokenBuffer -> bufferIndex + 1) -> type != CASE) {
         readNext(SEMICOLON);
         addNode(node -> nodes, parseRecordSection());
     }
@@ -1946,7 +2014,7 @@ SyntaxNode* parseSimpleStatement() {
         return parseProcedureStatement();
     }
     if (isNext(IDENTIFIER)) {
-        printf("Warn: Possible Ambiguity?\n");
+        // printf("Warn: Possible Ambiguity?\n");
         return parseProcedureStatement();
     }
     if (isNext(GOTO)) {
@@ -2587,26 +2655,28 @@ SyntaxNode* parseRecordVariableList() {
 #pragma endregion
 
 Token* readNext(enum TokenType type) {
-    if (tokenBuffer[bufferIndex] -> type != type) {
+    if (getToken(tokenBuffer, tokenBuffer -> bufferIndex) -> type != type) {
         printf("Expected next token to be type %s\n", getTokenType(type));
-        printToken(tokenBuffer[bufferIndex - 2]);
-        printToken(tokenBuffer[bufferIndex - 1]);
-        printToken(tokenBuffer[bufferIndex]);
-        printToken(tokenBuffer[bufferIndex + 1]);
-        printToken(tokenBuffer[bufferIndex + 2]);
+        printToken(getToken(tokenBuffer, tokenBuffer -> bufferIndex - 2));
+        printToken(getToken(tokenBuffer, tokenBuffer -> bufferIndex - 1));
+        printToken(getToken(tokenBuffer, tokenBuffer -> bufferIndex));
+        printToken(getToken(tokenBuffer, tokenBuffer -> bufferIndex + 1));
+        printToken(getToken(tokenBuffer, tokenBuffer -> bufferIndex + 2));
         exit(1);
     }
-    return tokenBuffer[bufferIndex++];
+    Token* token = getToken(tokenBuffer, tokenBuffer -> bufferIndex);
+    tokenBuffer -> bufferIndex++;
+    return token;
 }
 
 int isNext(enum TokenType type) {
-    return tokenBuffer[bufferIndex] -> type == type;
+    return  getToken(tokenBuffer, tokenBuffer -> bufferIndex) -> type == type;
 }
 
 int isNthTypeNext(enum TokenType type, int n) {
-    return BUFFER_SIZE > bufferIndex + n && 
-        tokenBuffer[bufferIndex + n] != NULL && 
-        tokenBuffer[bufferIndex + n] -> type == type;
+    return tokenBuffer -> size > tokenBuffer -> bufferIndex + n && 
+        getToken(tokenBuffer, tokenBuffer -> bufferIndex + n) != NULL && 
+        getToken(tokenBuffer, tokenBuffer -> bufferIndex + n) -> type == type;
 }
 
 #pragma endregion
@@ -2624,13 +2694,13 @@ NodeList* createNodeList() {
 
 void addNode(NodeList* list, SyntaxNode* node) {
     if (list -> size + 1 >= list -> capacity) {
-        resize(list);
+        resizeNodeList(list);
     }
     list -> array[list -> size] = node;
     list -> size++;
 }
 
-void resize(NodeList* list) {
+void resizeNodeList(NodeList* list) {
     if (list -> size == 0) {
         list -> capacity = 4;
     } else {
@@ -2645,6 +2715,10 @@ void resize(NodeList* list) {
 }
 
 SyntaxNode* getNode(NodeList* list, int i) {
+    if (i < 0 || list -> size <= i) {
+        printf("Illegal Node Get");
+        exit(1);
+    }
     return list -> array[i];
 }
 
@@ -2654,7 +2728,47 @@ SyntaxNode* getNode(NodeList* list, int i) {
 
 #pragma region TokenList
 
-// TODO
+TokenBuffer* createTokenBuffer() {
+    TokenBuffer* buffer = (TokenBuffer*)malloc(sizeof(TokenBuffer));
+    memset(buffer, 0, sizeof(TokenBuffer));
+    buffer -> size = 0;
+    buffer -> capacity = 0;
+    buffer -> bufferIndex = 0;
+    return buffer;
+}
+
+void addToken(TokenBuffer* buffer, Token* token) {
+    if (buffer -> bufferIndex + 1 >= buffer -> capacity) {
+        resizeTokenBuffer(buffer);
+    }
+    buffer -> tokens[buffer -> bufferIndex] = token;
+    buffer -> size++;
+    buffer -> bufferIndex++;
+}
+
+Token* getToken(TokenBuffer* buffer, int i) {
+    if (i < 0 || buffer -> size <= i) {
+        printf("index: %d ", i);
+        printf("bufferSize: %d ", buffer -> size);
+        printf("Illegal Token Read\n");
+        exit(1);
+    }
+    return buffer -> tokens[i];
+}
+
+void resizeTokenBuffer(TokenBuffer* buffer) {
+    if (buffer -> size == 0) {
+        buffer -> capacity = 4;
+    } else {
+        buffer -> capacity *= 2;
+    }
+    Token** resizedBuffer = (Token**)malloc(sizeof(Token) * buffer -> capacity);
+    for (int i = 0; i < buffer -> size; i++) {
+        resizedBuffer[i] = buffer -> tokens[i];
+    }
+    free(buffer -> tokens);
+    buffer -> tokens = resizedBuffer;
+}
 
 #pragma endregion
 
@@ -2666,6 +2780,20 @@ SyntaxNode* getNode(NodeList* list, int i) {
 
 #pragma region String
 
-// TODO
+char* concat(char* s1, char* s2) {
+    int size1 = strlen(s1);
+    int size2 = strlen(s2);
+    int resultSize = size1 + size2 + 1;
+    char* result = (char*)malloc(sizeof(char) * resultSize);
+    int j = 0;
+    for (int i = 0; i < size1; i++) {
+        result[j++] = s1[i];
+    }
+    for (int i = 0; i < size2; i++) {
+        result[j++] = s2[i];
+    }
+    result[j] = '\0';
+    return result;
+}
 
 #pragma endregion
