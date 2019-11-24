@@ -207,6 +207,11 @@ enum SyntaxNodeType {
     DOWN_TO_NODE,
 };
 
+enum SymbolType {
+    IDENTIFIER_SYMBOL,
+    FUNCTION_SYMBOL
+};
+
 #pragma endregion
 #pragma region TypeDef
 
@@ -233,6 +238,27 @@ typedef struct TokenBufferStruct {
     int size;
     struct TokenStruct** tokens;
 } TokenBuffer;
+
+typedef struct SymbolStruct {
+    enum SymbolType type;
+    char* identifier;
+} Symbol;
+
+typedef struct KeyValuePairStruct {
+    char* key;
+    Symbol* value;
+} KeyValuePair;
+
+typedef struct CollisionListStruct {
+    int size;
+    int capacity;
+    struct KeyValuePairStruct** collisions;
+} CollisionList;
+
+typedef struct HashMapStruct {
+    int size;
+    struct CollisionListStruct** pairs;
+} HashMap;
 
 #pragma endregion
 #pragma region FunctionDefs
@@ -366,6 +392,19 @@ SyntaxNode* parseRecordVariableList();
 Token* readNext(enum TokenType type);
 int isNext(enum TokenType type);
 int isNthTypeNext(enum TokenType type, int n);
+HashMap* createHashMap();
+int hash(char* key);
+void addToHashTable(HashMap* map, char* key, Symbol* value);
+KeyValuePair* getFromHashMap(HashMap* map, char* key);
+KeyValuePair* removeFromHashMap(HashMap* map, char* key);
+CollisionList* createCollisionList();
+void addToCollisionList(CollisionList* list, char* key, Symbol* value);
+KeyValuePair* removeFromCollisionList(CollisionList* list, char* key);
+void resizeCollisionList(CollisionList* list);
+KeyValuePair* getFromCollisionList(CollisionList* list, char* key);
+KeyValuePair* createKeyValuePair(char* key, Symbol* value);
+Symbol* createSymbol(char* identifier, enum SymbolType type);
+void getTypeDefintions(SyntaxNode* node);
 
 // NodeList
 void resizeNodeList(NodeList* list);
@@ -387,12 +426,16 @@ void resizeTokenBuffer(TokenBuffer* buffer);
 
 #pragma region Globals
 TokenBuffer* tokenBuffer;
-// int bufferIndex = 0;
+HashMap* scopeTable;
+HashMap* typeDefinitions;
+int TableSize = 100;
 int isDebug = 0;
 #pragma endregion
 
 int main(int argc, char *argv[]) {
     tokenBuffer = createTokenBuffer();
+    scopeTable = createHashMap();
+    typeDefinitions = createHashMap();
     if( argc < 2 )
     {
         printf("Must pass a file to be compiled\n");
@@ -413,6 +456,7 @@ int main(int argc, char *argv[]) {
         FILE* astOutput = fopen(concat(argv[1], ".ast"), "w+");
         writeASTToFile(astOutput, root, 0);
     }
+    getTypeDefintions(root);
     return 0;
 }
 
@@ -2772,9 +2816,129 @@ void resizeTokenBuffer(TokenBuffer* buffer) {
 
 #pragma endregion
 
+#pragma region Semantic Analysis
+
+void getTypeDefintions(SyntaxNode* node) {
+    if (node -> type == TYPE_DEFINITION_NODE) {
+        SyntaxNode* typeName = getNode(node -> nodes, 0);
+        Symbol* typeSymbol = createSymbol(typeName -> data, IDENTIFIER_SYMBOL);
+        addToHashTable(typeDefinitions, typeName -> data, typeSymbol);
+    } else if (node -> nodes != NULL) {
+        for (int i = 0; i < node -> nodes -> size; i++) {
+            getTypeDefintions(getNode(node -> nodes, i));
+        }
+    }
+}
+
+#pragma endregion
+
 #pragma region Scope
 
-// TODO
+#pragma region HashMap
+
+HashMap* createHashMap() {
+    HashMap* list = (HashMap*)malloc(sizeof(HashMap));
+    list -> pairs = (CollisionList**)malloc(sizeof(CollisionList) * TableSize);
+    list -> size = 0;
+    for (int i = 0; i < TableSize; i++) {
+        list -> pairs[i] = createCollisionList();
+    }
+    return list;
+}
+
+int hash(char* key) {
+    int sum = 0;
+    for (int i = 0; i < strlen(key); i++) {
+        sum += key[i];
+    }
+    return sum % TableSize;
+}
+
+void addToHashTable(HashMap* map, char* key, Symbol* value) {
+    int index = hash(key);
+    addToCollisionList(map -> pairs[index], key, value);
+    map -> size++;
+}
+
+KeyValuePair* getFromHashMap(HashMap* map, char* key) {
+    return getFromCollisionList(map -> pairs[hash(key)], key);
+}
+
+KeyValuePair* removeFromHashMap(HashMap* map, char* key) {
+    return removeFromCollisionList(map -> pairs[hash(key)], key);
+}
+
+CollisionList* createCollisionList() {
+    CollisionList* list = (CollisionList*)malloc(sizeof(CollisionList));
+    list -> capacity = 0;
+    list -> size = 0;
+    return list;
+}
+
+void addToCollisionList(CollisionList* list, char* key, Symbol* value) {
+    if (list -> size + 1 >= list -> capacity) {
+        resizeCollisionList(list);
+    }
+    list -> collisions[list -> size] = createKeyValuePair(key, value);
+    list -> size++;
+}
+
+void resizeCollisionList(CollisionList* list) {
+    if (list -> size == 0) {
+        list -> capacity = 4;
+    } else {
+        list -> capacity *= 2;
+    }
+    KeyValuePair** resizedList = (KeyValuePair**)malloc(sizeof(KeyValuePair) * list -> capacity);
+    for (int i = 0; i < list -> size; i++) {
+        resizedList[i] = list -> collisions[i];
+    }
+    free(list -> collisions);
+    list -> collisions = resizedList;
+}
+
+KeyValuePair* getFromCollisionList(CollisionList* list, char* key) {
+    int size = strlen(key);
+    for (int i = 0; i < list -> size; i++) {
+        if (strncmp(list -> collisions[i] -> key, key, size) == 0) {
+            return list -> collisions[i];
+        }
+    }
+    return NULL;
+}
+
+KeyValuePair* removeFromCollisionList(CollisionList* list, char* key) {
+    int size = strlen(key);
+    int foundAt = -1;
+    KeyValuePair* removedPair = NULL;
+    for (int i = 0; i < list -> size; i++) {
+        if (strncmp(list -> collisions[i] -> key, key, size) == 0) {
+            removedPair = list -> collisions[i];
+            list -> collisions[i] = NULL;
+            foundAt = i;
+            
+        }
+    }
+    for (int i = foundAt; i < list -> size - 1; i++) {
+        list -> collisions[i] = list -> collisions[i + 1];
+    }
+    list -> size--;
+    return removedPair;
+}
+
+KeyValuePair* createKeyValuePair(char* key, Symbol* value) {
+    KeyValuePair* pair = (KeyValuePair*)malloc(sizeof(KeyValuePair));
+    pair -> key = key;
+    pair -> value = value;
+    return pair;
+}
+
+Symbol* createSymbol(char* identifier, enum SymbolType type) {
+    Symbol* symbol = (Symbol*)malloc(sizeof(Symbol));
+    symbol -> type = type;
+    symbol -> identifier = identifier;
+    return symbol;
+}
 
 #pragma endregion
 
